@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Play, CheckCircle, XCircle, Clock, RotateCcw } from 'lucide-react'
+import { Play, CheckCircle, XCircle, Clock, RotateCcw, X } from 'lucide-react'
 import { APIClient } from '../api/client'
 import './TaskList.css'
 
@@ -10,6 +10,8 @@ interface Task {
   agent_type: string | null
   created_at: string
   result: any
+  model?: string
+  tokens_used?: number
 }
 
 interface TaskListProps {
@@ -20,6 +22,7 @@ export function TaskList({ refreshTrigger }: TaskListProps) {
   const [tasks, setTasks] = useState<Task[]>([])
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState<string>('')
+  const [selectedTask, setSelectedTask] = useState<Task | null>(null)
 
   useEffect(() => {
     loadTasks()
@@ -36,6 +39,16 @@ export function TaskList({ refreshTrigger }: TaskListProps) {
     } finally {
       setLoading(false)
     }
+  }
+
+  const formatModelName = (modelId: string) => {
+    // Extract model name from ID like 'ollama-llama3' -> 'Llama 3'
+    if (modelId.includes('-')) {
+      const parts = modelId.split('-')
+      const name = parts.slice(1).join(' ')
+      return name.charAt(0).toUpperCase() + name.slice(1)
+    }
+    return modelId
   }
 
   const handleCancel = async (taskId: string) => {
@@ -86,6 +99,8 @@ export function TaskList({ refreshTrigger }: TaskListProps) {
         <div className="task-header">
           <span>Task</span>
           <span>Agent</span>
+          <span>Model</span>
+          <span>Tokens</span>
           <span>Status</span>
           <span>Created</span>
           <span>Actions</span>
@@ -95,12 +110,18 @@ export function TaskList({ refreshTrigger }: TaskListProps) {
           <div className="no-tasks">No tasks found</div>
         ) : (
           tasks.map((task) => (
-            <div key={task.id} className="task-row">
+            <div key={task.id} className="task-row" onClick={() => setSelectedTask(task)} style={{cursor: 'pointer'}}>
               <div className="task-description" title={task.description}>
                 {task.description}
               </div>
               <div className="task-agent">
                 {task.agent_type || 'Auto'}
+              </div>
+              <div className="task-model">
+                {task.model ? formatModelName(task.model) : <span className="no-data">-</span>}
+              </div>
+              <div className="task-tokens">
+                {task.tokens_used ? task.tokens_used.toLocaleString() : <span className="no-data">-</span>}
               </div>
               <div className={getStatusClass(task.status)}>
                 {getStatusIcon(task.status)}
@@ -123,6 +144,104 @@ export function TaskList({ refreshTrigger }: TaskListProps) {
           ))
         )}
       </div>
+
+      {/* Task Detail Modal */}
+      {selectedTask && (
+        <div className="task-modal-overlay" onClick={() => setSelectedTask(null)}>
+          <div className="task-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="task-modal-header">
+              <h3>Task Details</h3>
+              <button className="close-btn" onClick={() => setSelectedTask(null)}>
+                <X size={20} />
+              </button>
+            </div>
+            <div className="task-modal-content">
+              <div className="task-detail-row">
+                <span className="label">Description:</span>
+                <span className="value">{selectedTask.description}</span>
+              </div>
+              <div className="task-detail-row">
+                <span className="label">Status:</span>
+                <span className={`status-badge ${selectedTask.status}`}>
+                  {getStatusIcon(selectedTask.status)}
+                  {selectedTask.status}
+                </span>
+              </div>
+              <div className="task-detail-row">
+                <span className="label">Agent:</span>
+                <span className="value">{selectedTask.agent_type || 'Auto'}</span>
+              </div>
+              <div className="task-detail-row">
+                <span className="label">Created:</span>
+                <span className="value">{new Date(selectedTask.created_at).toLocaleString()}</span>
+              </div>
+              {selectedTask.model && (
+                <div className="task-detail-row">
+                  <span className="label">Model:</span>
+                  <span className="value model-badge-display">
+                    {selectedTask.model}
+                  </span>
+                </div>
+              )}
+              {selectedTask.tokens_used && (
+                <div className="task-detail-row">
+                  <span className="label">Tokens:</span>
+                  <span className="value">{selectedTask.tokens_used.toLocaleString()}</span>
+                </div>
+              )}
+              {selectedTask.result && (
+                <div className="task-result">
+                  <span className="label">Result:</span>
+                  <div className="result-content">
+                    {(() => {
+                      // Extract content from result object
+                      let content = ''
+                      if (typeof selectedTask.result === 'string') {
+                        content = selectedTask.result
+                      } else if (selectedTask.result?.content) {
+                        content = selectedTask.result.content
+                      } else if (selectedTask.result?.result?.content) {
+                        content = selectedTask.result.result.content
+                      } else {
+                        content = JSON.stringify(selectedTask.result, null, 2)
+                      }
+                      
+                      // Convert escape sequences to actual formatting
+                      content = content
+                        .replace(/\\n/g, '\n')
+                        .replace(/\\t/g, '  ')
+                        .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+                        .replace(/```(\w+)?\n([\s\S]*?)```/g, '<pre class="code-block"><code>$2</code></pre>')
+                        .replace(/`([^`]+)`/g, '<code>$1</code>')
+                      
+                      // Split by newlines and render
+                      return content.split('\n').map((line, i) => {
+                        // Handle bullet points
+                        if (line.trim().startsWith('* ') || line.trim().startsWith('- ')) {
+                          return <div key={i} className="bullet-point">• {line.trim().substring(2)}</div>
+                        }
+                        // Handle numbered lists
+                        if (/^\d+\./.test(line.trim())) {
+                          return <div key={i} className="numbered-point">{line.trim()}</div>
+                        }
+                        // Handle headers
+                        if (line.trim().startsWith('# ')) {
+                          return <h1 key={i} className="result-header">{line.trim().substring(2)}</h1>
+                        }
+                        if (line.trim().startsWith('## ')) {
+                          return <h2 key={i} className="result-header">{line.trim().substring(3)}</h2>
+                        }
+                        // Regular line
+                        return <div key={i} className="result-line" dangerouslySetInnerHTML={{ __html: line || '&nbsp;' }} />
+                      })
+                    })()}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

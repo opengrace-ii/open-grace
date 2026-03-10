@@ -141,22 +141,22 @@
 
 /* Main Content */
 .dashboard-main {
-  padding: 32px;
+  padding: 24px 32px;
 }
 
 /* Stats Grid */
 .stats-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: 24px;
-  margin-bottom: 32px;
+  gap: 20px;
+  margin-bottom: 20px;
 }
 
 /* Dashboard Content */
 .dashboard-content {
   display: grid;
   grid-template-columns: 2fr 1fr;
-  gap: 32px;
+  gap: 24px;
 }
 
 .content-section {
@@ -164,14 +164,20 @@
   border-radius: 12px;
   border: 1px solid #334155;
   overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - 200px);
 }
 
 .section-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 20px 24px;
+  padding: 10px 24px;
   border-bottom: 1px solid #334155;
+  background: #1e293b;
+  min-height: 48px;
+  flex-shrink: 0;
 }
 
 .section-header h2 {

@@ -1,33 +1,73 @@
 import { useState, useEffect } from 'react'
-import { User, Cpu, Activity, Power } from 'lucide-react'
+import { Brain, Code, Terminal, Search, Activity, Power } from 'lucide-react'
 import { APIClient } from '../api/client'
 import './AgentList.css'
 
-interface Agent {
+interface AgentStatus {
   id: string
   name: string
-  agent_type: string
+  type: string
+  description: string
+  icon: React.ReactNode
   status: 'idle' | 'busy' | 'offline'
   capabilities: string[]
-  task_count: number
 }
 
+const BUILT_IN_AGENTS: AgentStatus[] = [
+  {
+    id: 'planner',
+    name: 'Planner',
+    type: 'planner',
+    description: 'Breaks down complex tasks and coordinates other agents',
+    icon: <Brain size={20} />,
+    status: 'idle',
+    capabilities: ['Task decomposition', 'Agent coordination', 'Planning']
+  },
+  {
+    id: 'coder',
+    name: 'Coder',
+    type: 'coder',
+    description: 'Writes, reviews, and refactors code in multiple languages',
+    icon: <Code size={20} />,
+    status: 'idle',
+    capabilities: ['Python', 'JavaScript', 'Code review', 'Debugging']
+  },
+  {
+    id: 'sysadmin',
+    name: 'SysAdmin',
+    type: 'sysadmin',
+    description: 'Manages Docker, shell commands, and system operations',
+    icon: <Terminal size={20} />,
+    status: 'idle',
+    capabilities: ['Docker', 'Shell', 'System monitoring', 'Deployment']
+  },
+  {
+    id: 'researcher',
+    name: 'Researcher',
+    type: 'researcher',
+    description: 'Conducts research and builds knowledge graphs',
+    icon: <Search size={20} />,
+    status: 'idle',
+    capabilities: ['Web search', 'Knowledge graphs', 'Data analysis']
+  }
+]
+
 export function AgentList() {
-  const [agents, setAgents] = useState<Agent[]>([])
-  const [loading, setLoading] = useState(true)
+  const [agents, setAgents] = useState<AgentStatus[]>(BUILT_IN_AGENTS)
+  const [loading, setLoading] = useState(false)
 
   useEffect(() => {
     loadAgents()
-    const interval = setInterval(loadAgents, 5000)
-    return () => clearInterval(interval)
   }, [])
 
   const loadAgents = async () => {
     try {
       const data = await APIClient.getAgents()
-      setAgents(data)
+      if (data && data.length > 0) {
+        setAgents(BUILT_IN_AGENTS)
+      }
     } catch (err) {
-      console.error('Failed to load agents:', err)
+      console.log('Using static agent list')
     } finally {
       setLoading(false)
     }
@@ -36,11 +76,11 @@ export function AgentList() {
   const getStatusIcon = (status: string) => {
     switch (status) {
       case 'busy':
-        return <Activity size={16} className="status-busy" />
+        return <Activity size={14} className="status-busy" />
       case 'idle':
-        return <Power size={16} className="status-idle" />
+        return <Power size={14} className="status-idle" />
       default:
-        return <Power size={16} className="status-offline" />
+        return <Power size={14} className="status-offline" />
     }
   }
 
@@ -50,49 +90,42 @@ export function AgentList() {
 
   return (
     <div className="agent-list">
-      {agents.length === 0 ? (
-        <div className="no-agents">No agents available</div>
-      ) : (
-        <div className="agent-grid">
-          {agents.map((agent) => (
-            <div key={agent.id} className={`agent-card ${agent.status}`}>
-              <div className="agent-header">
-                <div className="agent-icon">
-                  <User size={24} />
-                </div>
-                <div className="agent-status">
-                  {getStatusIcon(agent.status)}
-                </div>
+      <div className="agent-grid">
+        {agents.map((agent) => (
+          <div key={agent.id} className={`agent-card ${agent.status}`}>
+            <div className="agent-header">
+              <div className="agent-icon">
+                {agent.icon}
               </div>
-              
-              <div className="agent-info">
-                <h4>{agent.name}</h4>
-                <span className="agent-type">{agent.agent_type}</span>
-              </div>
-
-              <div className="agent-stats">
-                <div className="stat">
-                  <Cpu size={14} />
-                  <span>{agent.task_count} tasks</span>
-                </div>
-              </div>
-
-              <div className="agent-capabilities">
-                {agent.capabilities.slice(0, 3).map((cap) => (
-                  <span key={cap} className="capability-tag">
-                    {cap}
-                  </span>
-                ))}
-                {agent.capabilities.length > 3 && (
-                  <span className="capability-more">
-                    +{agent.capabilities.length - 3}
-                  </span>
-                )}
+              <div className="agent-status">
+                {getStatusIcon(agent.status)}
               </div>
             </div>
-          ))}
-        </div>
-      )}
+            
+            <div className="agent-info">
+              <h4>{agent.name}</h4>
+              <span className="agent-type">{agent.type}</span>
+            </div>
+
+            <div className="agent-description">
+              {agent.description}
+            </div>
+
+            <div className="agent-capabilities">
+              {agent.capabilities.slice(0, 3).map((cap) => (
+                <span key={cap} className="capability-tag">
+                  {cap}
+                </span>
+              ))}
+              {agent.capabilities.length > 3 && (
+                <span className="capability-more">
+                  +{agent.capabilities.length - 3}
+                </span>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
     </div>
   )
 }

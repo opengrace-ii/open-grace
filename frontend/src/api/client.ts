@@ -1,4 +1,17 @@
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
+// Use environment variable or detect if running on mobile
+const getApiUrl = () => {
+  const envUrl = import.meta.env.VITE_API_URL
+  if (envUrl) return envUrl
+  
+  // If accessing from mobile device, use network IP
+  if (/Mobi|Android/i.test(navigator.userAgent)) {
+    return 'http://192.168.0.165:8000'
+  }
+  
+  return 'http://localhost:8000'
+}
+
+const API_BASE_URL = getApiUrl()
 
 export class APIClient {
   private static token: string | null = null
@@ -53,15 +66,19 @@ export class APIClient {
     return this.request(`/tasks${params}`)
   }
 
-  static async createTask(description: string, agentType?: string, priority: number = 5) {
+  static async createTask(description: string, agentType?: string, priority: number = 5, model?: string) {
     return this.request('/tasks', {
       method: 'POST',
-      body: JSON.stringify({ description, agent_type: agentType, priority })
+      body: JSON.stringify({ description, agent_type: agentType, priority, model })
     })
   }
 
   static async cancelTask(taskId: string) {
     return this.request(`/tasks/${taskId}/cancel`, { method: 'POST' })
+  }
+
+  static async getTaskStatus(taskId: string) {
+    return this.request(`/tasks/${taskId}`)
   }
 
   // Agents

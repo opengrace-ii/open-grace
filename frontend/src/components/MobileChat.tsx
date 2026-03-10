@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
-import { Send, Menu, MoreVertical, Paperclip, Mic, Bot, User, Check, CheckCheck, LogOut } from 'lucide-react'
+import { Send, Menu, MoreVertical, Paperclip, Mic, Bot, User, Check, CheckCheck, LogOut, Trash2 } from 'lucide-react'
 import { APIClient } from '../api/client'
 import './MobileChat.css'
 
@@ -24,17 +24,46 @@ const QUICK_ACTIONS: TaskSuggestion[] = [
   { id: '4', title: 'Optimize', icon: 'zap' },
 ]
 
+const STORAGE_KEY = 'opengrace_mobile_chat_history'
+
 export function MobileChat() {
-  const [messages, setMessages] = useState<Message[]>([])
+  const [messages, setMessages] = useState<Message[]>(() => {
+    // Load from localStorage on init
+    const saved = localStorage.getItem(STORAGE_KEY)
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved)
+        return parsed.map((m: any) => ({
+          ...m,
+          timestamp: new Date(m.timestamp)
+        }))
+      } catch {
+        return []
+      }
+    }
+    return []
+  })
   const [input, setInput] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [showQuickActions, setShowQuickActions] = useState(true)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
+  const messagesContainerRef = useRef<HTMLDivElement>(null)
+
+  // Save messages to localStorage
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(messages))
+    // Hide quick actions if we have messages
+    if (messages.length > 0) {
+      setShowQuickActions(false)
+    }
+  }, [messages])
 
   // Auto-scroll to bottom
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+    if (messagesContainerRef.current) {
+      messagesContainerRef.current.scrollTop = messagesContainerRef.current.scrollHeight
+    }
   }, [messages])
 
   // Focus input on mount
@@ -71,22 +100,63 @@ export function MobileChat() {
     try {
       // Create a task for the AI
       const response = await APIClient.createTask(content.trim())
+      const taskId = response.id
       
-      // Simulate streaming response (in real implementation, use WebSocket)
-      const fullResponse = `I'll help you with that. Task created: ${response.id}`
+      // Poll for task completion
+      let attempts = 0
+      const maxAttempts = 60 // 60 seconds timeout
       
-      setMessages(prev => prev.map(msg => 
-        msg.id === assistantId 
-          ? { ...msg, content: fullResponse, status: 'sent' }
-          : msg
-      ))
+      const pollInterval = setInterval(async () => {
+        try {
+          const taskStatus = await APIClient.getTaskStatus(taskId)
+          attempts++
+          
+          if (taskStatus.status === 'completed' && taskStatus.result) {
+            clearInterval(pollInterval)
+            const result = typeof taskStatus.result === 'string' 
+              ? taskStatus.result 
+              : JSON.stringify(taskStatus.result, null, 2)
+            
+            setMessages(prev => prev.map(msg => 
+              msg.id === assistantId 
+                ? { ...msg, content: result, status: 'sent' }
+                : msg
+            ))
+            setIsLoading(false)
+          } else if (taskStatus.status === 'failed') {
+            clearInterval(pollInterval)
+            setMessages(prev => prev.map(msg => 
+              msg.id === assistantId 
+                ? { ...msg, content: 'Task failed: ' + (taskStatus.error || 'Unknown error'), status: 'error' }
+                : msg
+            ))
+            setIsLoading(false)
+          } else if (attempts >= maxAttempts) {
+            clearInterval(pollInterval)
+            setMessages(prev => prev.map(msg => 
+              msg.id === assistantId 
+                ? { ...msg, content: 'Task is taking longer than expected. Check the dashboard for results.', status: 'sent' }
+                : msg
+            ))
+            setIsLoading(false)
+          }
+        } catch (pollError) {
+          clearInterval(pollInterval)
+          setMessages(prev => prev.map(msg => 
+            msg.id === assistantId 
+              ? { ...msg, content: 'Error checking task status. Please check the dashboard.', status: 'error' }
+              : msg
+          ))
+          setIsLoading(false)
+        }
+      }, 1000) // Poll every second
+      
     } catch (error) {
       setMessages(prev => prev.map(msg => 
         msg.id === assistantId 
           ? { ...msg, content: 'Sorry, I encountered an error. Please try again.', status: 'error' }
           : msg
       ))
-    } finally {
       setIsLoading(false)
     }
   }
@@ -118,6 +188,14 @@ export function MobileChat() {
     return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
   }
 
+  const clearHistory = () => {
+    if (confirm('Clear all chat history?')) {
+      setMessages([])
+      setShowQuickActions(true)
+      localStorage.removeItem(STORAGE_KEY)
+    }
+  }
+
   const handleLogout = () => {
     if (confirm('Logout from this device?')) {
       localStorage.removeItem('token')
@@ -147,43 +225,42 @@ export function MobileChat() {
     <div className="mobile-chat">
       {/* Header */}
       <header className="mobile-header">
-        <button className="icon-btn logout-btn" onClick={handleLogout} title="Logout">
-          <LogOut size={20} />
+        <button className="icon-btn" onClick={clearHistory} title="Clear History">
+          <Trash2 size={20} />
         </button>
         <div className="header-title">
           <Bot size={20} />
           <span>Open Grace</span>
         </div>
-        <button className="icon-btn logout-all-btn" onClick={handleLogoutAll} title="Logout All Devices">
-          <span style={{fontSize: '10px', fontWeight: 'bold'}}>ALL</span>
+        <button className="icon-btn logout-btn" onClick={handleLogout} title="Logout">
+          <LogOut size={20} />
         </button>
       </header>
 
-      {/* Messages */}
-      <div className="messages-container">
-        {messages.length === 0 && showQuickActions && (
-          <div className="welcome-screen">
-            <div className="welcome-icon">
-              <Bot size={48} />
-            </div>
-            <h2>How can I help you today?</h2>
-            <p>Chat with AI agents to code, review, and automate tasks</p>
-            
-            <div className="quick-actions">
-              {QUICK_ACTIONS.map(action => (
-                <button
-                  key={action.id}
-                  className="quick-action-btn"
-                  onClick={() => handleQuickAction(action)}
-                >
-                  {action.title}
-                </button>
-              ))}
-            </div>
+      {/* Welcome Screen or Messages */}
+      {messages.length === 0 ? (
+        <div className="welcome-screen">
+          <div className="welcome-icon">
+            <Bot size={48} />
           </div>
-        )}
-
-        {messages.map((message) => (
+          <h2>How can I help you today?</h2>
+          <p>Chat with AI agents to code, review, and automate tasks</p>
+          
+          <div className="quick-actions">
+            {QUICK_ACTIONS.map(action => (
+              <button
+                key={action.id}
+                className="quick-action-btn"
+                onClick={() => handleQuickAction(action)}
+              >
+                {action.title}
+              </button>
+            ))}
+          </div>
+        </div>
+      ) : (
+        <div className="messages-container" ref={messagesContainerRef}>
+          {messages.map((message) => (
           <div
             key={message.id}
             className={`message ${message.role} ${message.status || ''}`}
@@ -212,7 +289,8 @@ export function MobileChat() {
         )}
 
         <div ref={messagesEndRef} />
-      </div>
+        </div>
+      )}
 
       {/* Input Area */}
       <form className="input-container" onSubmit={handleSubmit}>

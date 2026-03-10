@@ -404,9 +404,14 @@ class AnthropicClient(BaseModelClient):
 class GeminiClient(BaseModelClient):
     """Client for Google Gemini API."""
     
+    # Available models: gemini-1.5-flash-latest, gemini-1.5-pro-latest, gemini-pro
+    DEFAULT_MODEL = "gemini-1.5-flash-latest"
+    
     def __init__(self, api_key: Optional[str] = None,
-                 model: str = "gemini-pro",
+                 model: str = None,
                  temperature: float = 0.7):
+        if model is None:
+            model = self.DEFAULT_MODEL
         config = ModelConfig(
             provider=ModelProvider.GEMINI,
             model_name=model,

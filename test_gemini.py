@@ -30,7 +30,7 @@ def test_gemini():
     try:
         # Create Gemini client
         print("\n🔄 Creating Gemini client...")
-        client = GeminiClient(api_key=api_key, model="gemini-1.5-flash")
+        client = GeminiClient(api_key=api_key)
         
         # Test simple generation
         print("🔄 Testing simple generation...")

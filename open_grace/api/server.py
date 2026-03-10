@@ -671,6 +671,9 @@ class APIServer:
         return self.app
 
 
+# Create app instance for uvicorn
+app = APIServer().app
+
 # Main entry point
 if __name__ == "__main__":
     async def main():

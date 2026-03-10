@@ -1,5 +1,9 @@
 .task-list {
   padding: 0;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
 }
 
 .task-list.loading {
@@ -9,8 +13,10 @@
 }
 
 .filter-bar {
-  padding: 16px 24px;
+  padding: 6px 24px;
+  background: #1e293b;
   border-bottom: 1px solid #334155;
+  flex-shrink: 0;
 }
 
 .filter-bar select {
@@ -25,6 +31,28 @@
 .task-table {
   display: flex;
   flex-direction: column;
+  flex: 1;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: #334155 #0f172a;
+  min-height: 0;
+}
+
+.task-table::-webkit-scrollbar {
+  width: 8px;
+}
+
+.task-table::-webkit-scrollbar-track {
+  background: #0f172a;
+}
+
+.task-table::-webkit-scrollbar-thumb {
+  background: #334155;
+  border-radius: 4px;
+}
+
+.task-table::-webkit-scrollbar-thumb:hover {
+  background: #475569;
 }
 
 .task-header {
@@ -38,6 +66,10 @@
   color: #64748b;
   text-transform: uppercase;
   letter-spacing: 0.5px;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  border-bottom: 2px solid #334155;
 }
 
 .task-row {
@@ -64,6 +96,22 @@
 .task-agent {
   color: #94a3b8;
   font-size: 13px;
+}
+
+.task-model {
+  color: #60a5fa;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.task-tokens {
+  color: #fbbf24;
+  font-size: 12px;
+  font-family: 'JetBrains Mono', monospace;
+}
+
+.no-data {
+  color: #475569;
 }
 
 .status-badge {
@@ -132,4 +180,178 @@
 @keyframes spin {
   from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }
+}
+
+/* Task Detail Modal */
+.task-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.8);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 20px;
+}
+
+.task-modal {
+  background: #1e293b;
+  border-radius: 12px;
+  width: 100%;
+  max-width: 700px;
+  max-height: 80vh;
+  overflow: hidden;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+}
+
+.task-modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 20px 24px;
+  border-bottom: 1px solid #334155;
+}
+
+.task-modal-header h3 {
+  margin: 0;
+  font-size: 18px;
+  color: #f8fafc;
+}
+
+.task-modal-header .close-btn {
+  background: none;
+  border: none;
+  color: #64748b;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 6px;
+  transition: all 0.2s;
+}
+
+.task-modal-header .close-btn:hover {
+  background: #334155;
+  color: #f8fafc;
+}
+
+.task-modal-content {
+  padding: 24px;
+  overflow-y: auto;
+  max-height: calc(80vh - 80px);
+}
+
+.task-detail-row {
+  display: flex;
+  margin-bottom: 16px;
+  align-items: flex-start;
+}
+
+.task-detail-row .label {
+  width: 100px;
+  color: #64748b;
+  font-size: 14px;
+  font-weight: 500;
+  flex-shrink: 0;
+}
+
+.task-detail-row .value {
+  color: #e2e8f0;
+  font-size: 14px;
+  flex: 1;
+}
+
+.task-result {
+  margin-top: 20px;
+  padding-top: 20px;
+  border-top: 1px solid #334155;
+}
+
+.task-result .label {
+  display: block;
+  color: #64748b;
+  font-size: 14px;
+  font-weight: 500;
+  margin-bottom: 12px;
+}
+
+.result-content {
+  background: #0f172a;
+  border: 1px solid #334155;
+  border-radius: 8px;
+  padding: 20px;
+  color: #e2e8f0;
+  font-size: 14px;
+  line-height: 1.7;
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.result-line {
+  margin-bottom: 8px;
+}
+
+.result-line strong,
+.result-content strong {
+  color: #60a5fa;
+  font-weight: 600;
+}
+
+.bullet-point {
+  margin: 8px 0 8px 20px;
+  color: #94a3b8;
+}
+
+.numbered-point {
+  margin: 8px 0;
+  color: #e2e8f0;
+  font-weight: 500;
+}
+
+.result-header {
+  color: #f8fafc;
+  font-size: 16px;
+  font-weight: 600;
+  margin: 16px 0 12px 0;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #334155;
+}
+
+.code-block {
+  background: #1e293b;
+  border: 1px solid #475569;
+  border-radius: 6px;
+  padding: 12px;
+  margin: 12px 0;
+  overflow-x: auto;
+}
+
+.code-block code {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  color: #e2e8f0;
+  white-space: pre;
+}
+
+.result-content code {
+  background: #334155;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  color: #fbbf24;
+}
+
+.model-badge-display {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  background: rgba(59, 130, 246, 0.1);
+  border: 1px solid rgba(59, 130, 246, 0.3);
+  border-radius: 100px;
+  font-size: 12px;
+  color: #3b82f6;
+  font-weight: 500;
 }
