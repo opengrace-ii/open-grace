@@ -26,7 +26,7 @@ import './LandingPage.css'
 export function LandingPage() {
   const [copied, setCopied] = useState(false)
 
-  const installCommand = 'pip install open-grace && grace init'
+  const installCommand = 'git clone https://github.com/opengrace-ii/open-grace && cd open-grace && pip install -e .'
 
   const handleCopy = () => {
     navigator.clipboard.writeText(installCommand)
@@ -139,10 +139,10 @@ export function LandingPage() {
 
         {/* Install Box */}
         <div className="install-section">
-          <div className="install-label">Quick Start</div>
+          <div className="install-label">Quick Install</div>
           <div className="install-box">
             <Terminal size={16} className="command-icon" />
-            <code>{installCommand}</code>
+            <code>git clone https://github.com/opengrace-ii/open-grace</code>
             <button className="copy-btn" onClick={handleCopy}>
               {copied ? <Check size={16} /> : <Copy size={16} />}
             </button>
@@ -234,15 +234,15 @@ class CodeReviewer(GraceAgent):
           <div className="cta-steps">
             <div className="step">
               <span className="step-num">1</span>
-              <code>pip install open-grace</code>
+              <code>git clone https://github.com/opengrace-ii/open-grace</code>
             </div>
             <div className="step">
               <span className="step-num">2</span>
-              <code>grace init</code>
+              <code>cd open-grace && pip install -e .</code>
             </div>
             <div className="step">
               <span className="step-num">3</span>
-              <span>Start building with AI</span>
+              <code>grace init && grace start</code>
             </div>
           </div>
           <a href="/login" className="btn-primary large">

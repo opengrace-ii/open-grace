@@ -26,12 +26,18 @@ Traditional agent frameworks wait for you to type something. Open Grace runs **a
 The entire system runs locally using **Ollama** for maximum privacy. No data leaves your machine unless you explicitly configure it.
 
 ```bash
-# Quick Install
+# Quick Install (requires Python 3.10+, Docker, Ollama)
 git clone https://github.com/opengrace-ii/open-grace
 cd open-grace
+
+# Create virtual environment (recommended)
+python3 -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+
+# Install Open Grace
 pip install -e .
 
-# Start the system
+# Initialize and start
 grace init
 grace start
 
