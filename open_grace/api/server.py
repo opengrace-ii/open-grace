@@ -40,6 +40,8 @@ class TaskResponse(BaseModel):
     agent_type: Optional[str]
     created_at: str
     result: Optional[Any] = None
+    model: Optional[str] = None
+      tokens_used: Optional[int] = None
 
 
 class AgentInfo(BaseModel):
@@ -415,7 +417,9 @@ class APIServer:
                 description=task.description,
                 status=task.status.value,
                 agent_type=task.agent_type,
-                created_at=task.created_at.isoformat() if isinstance(task.created_at, datetime) else task.created_at
+                created_at=task.created_at.isoformat() if isinstance(task.created_at, datetime) else task.created_at,
+               model=task.model,
+                tokens_used=task.tokens_used
             )
         
         @self.app.get("/tasks", response_model=List[TaskResponse])
@@ -432,14 +436,16 @@ class APIServer:
             
             tasks = await orchestrator.list_tasks(status=task_status)
             
-            return [
+           return [
                 TaskResponse(
-                    id=t.id,
-                    description=t.description,
-                    status=t.status.value,
+                   id=t.id,
+                   description=t.description,
+                   status=t.status.value,
                     agent_type=t.agent_type,
                     created_at=t.created_at.isoformat() if isinstance(t.created_at, datetime) else t.created_at,
-                    result=t.result
+                   result=t.result,
+                   model=t.model,
+                    tokens_used=t.tokens_used
                 )
                 for t in tasks
             ]
@@ -455,15 +461,17 @@ class APIServer:
             if not task:
                 raise HTTPException(status_code=404, detail="Task not found")
             
-            return TaskResponse(
-                id=task.id,
-                description=task.description,
-                status=task.status.value,
+          return TaskResponse(
+               id=task.id,
+              description=task.description,
+              status=task.status.value,
                 agent_type=task.agent_type,
-                created_at=t.created_at.isoformat() if isinstance(t.created_at, datetime) else t.created_at,
-                result=t.result
+                created_at=task.created_at.isoformat() if isinstance(task.created_at, datetime) else task.created_at,
+              result=task.result,
+              model=task.model,
+                tokens_used=task.tokens_used
             )
-        
+
         @self.app.post("/tasks/{task_id}/cancel")
         async def cancel_task(task_id: str):
             """Cancel a task."""

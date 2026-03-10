@@ -44,16 +44,18 @@ class AgentStatus(Enum):
 @dataclass
 class Task:
     """A task to be executed."""
-    id: str
-    description: str
-    status: TaskStatus
+   id: str
+   description: str
+   status: TaskStatus
     agent_type: Optional[str]
     created_at: datetime
-    started_at: Optional[datetime] = None
+   started_at: Optional[datetime] = None
     completed_at: Optional[datetime] = None
-    result: Any = None
+   result: Any = None
     error: Optional[str] = None
-    metadata: Dict[str, Any] = field(default_factory=dict)
+   metadata: Dict[str, Any] = field(default_factory=dict)
+   model: Optional[str] = None
+    tokens_used: Optional[int] = None
 
 
 @dataclass
@@ -417,27 +419,35 @@ class GraceOrchestrator:
             
             if not agent_id:
                 # Use model router directly if no agent available
-                response = self.router.generate(
+               response = self.router.generate(
                     task.description,
-                    strategy=RoutingStrategy.HYBRID
+                   strategy=RoutingStrategy.HYBRID
                 )
                 task.result = {
                     "content": response.content,
                     "provider": response.provider.value,
                     "model": response.model
                 }
+                # Capture model and tokens info
+                task.model = response.model
+                task.tokens_used = getattr(response, 'tokens_used', None)
             else:
                 # Execute via agent
                 agent_instance = self._agent_instances.get(agent_id)
                 if agent_instance:
-                    result = await agent_instance.execute(task.description)
+                   result = await agent_instance.execute(task.description)
                     task.result = result
+                    
+                    # Extract model and tokens from result if available
+                    if isinstance(result, dict):
+                        task.model= result.get('model') or result.get('response', {}).get('model')
+                        task.tokens_used = result.get('tokens_used') or result.get('response', {}).get('tokens_used')
                     
                     # Update agent stats
                     agent_info = self._agents[agent_id]
                     agent_info.task_count += 1
                     agent_info.last_active = datetime.now()
-            
+
             task.status = TaskStatus.COMPLETED
             self.logger.info(f"Task completed: {task.id}")
             await self._emit_event("task.completed", {
