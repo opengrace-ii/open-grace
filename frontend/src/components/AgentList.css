@@ -1,0 +1,137 @@
+.agent-list {
+  padding: 24px;
+}
+
+.agent-list.loading {
+  padding: 40px;
+  text-align: center;
+  color: #64748b;
+}
+
+.no-agents {
+  padding: 40px;
+  text-align: center;
+  color: #64748b;
+}
+
+.agent-grid {
+  display: grid;
+  gap: 16px;
+}
+
+.agent-card {
+  background: #0f172a;
+  border: 1px solid #334155;
+  border-radius: 10px;
+  padding: 16px;
+  transition: border-color 0.2s;
+}
+
+.agent-card:hover {
+  border-color: #475569;
+}
+
+.agent-card.idle {
+  border-left: 3px solid #22c55e;
+}
+
+.agent-card.busy {
+  border-left: 3px solid #3b82f6;
+}
+
+.agent-card.offline {
+  border-left: 3px solid #64748b;
+}
+
+.agent-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.agent-icon {
+  width: 40px;
+  height: 40px;
+  background: #334155;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #94a3b8;
+}
+
+.agent-status {
+  padding: 4px;
+}
+
+.status-busy {
+  color: #3b82f6;
+  animation: pulse 2s infinite;
+}
+
+.status-idle {
+  color: #22c55e;
+}
+
+.status-offline {
+  color: #64748b;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+.agent-info {
+  margin-bottom: 12px;
+}
+
+.agent-info h4 {
+  font-size: 15px;
+  font-weight: 600;
+  color: #f8fafc;
+  margin-bottom: 4px;
+}
+
+.agent-type {
+  font-size: 12px;
+  color: #64748b;
+  text-transform: capitalize;
+}
+
+.agent-stats {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 12px;
+}
+
+.stat {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: #94a3b8;
+}
+
+.agent-capabilities {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.capability-tag {
+  font-size: 11px;
+  padding: 3px 8px;
+  background: #334155;
+  color: #94a3b8;
+  border-radius: 4px;
+}
+
+.capability-more {
+  font-size: 11px;
+  padding: 3px 8px;
+  background: #1e293b;
+  color: #64748b;
+  border-radius: 4px;
+}

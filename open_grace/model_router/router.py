@@ -1,0 +1,434 @@
+"""
+Model Router - Intelligent routing between local and external AI models.
+
+The router decides which model to use based on:
+- Task complexity
+- Cost constraints
+- Model availability
+- User preferences
+"""
+
+import os
+import json
+from typing import Dict, List, Optional, Any, Callable
+from dataclasses import dataclass, asdict
+from datetime import datetime
+from pathlib import Path
+from enum import Enum
+
+from open_grace.model_router.clients import (
+    BaseModelClient,
+    OllamaClient,
+    OpenAIClient,
+    AnthropicClient,
+    GeminiClient,
+    DeepSeekClient,
+    ModelProvider,
+    ModelResponse,
+)
+from open_grace.security.vault import get_vault
+
+
+class RoutingStrategy(Enum):
+    """Routing strategies."""
+    LOCAL_ONLY = "local_only"           # Only use local models
+    COST_OPTIMIZED = "cost_optimized"   # Prefer cheaper options
+    QUALITY_FIRST = "quality_first"     # Prefer best quality
+    HYBRID = "hybrid"                   # Smart routing based on task
+
+
+@dataclass
+class RoutingDecision:
+    """Record of a routing decision."""
+    task: str
+    provider: ModelProvider
+    model: str
+    strategy: RoutingStrategy
+    reasoning: str
+    estimated_cost: float
+    timestamp: str = ""
+    
+    def __post_init__(self):
+        if not self.timestamp:
+            self.timestamp = datetime.now().isoformat()
+
+
+class ModelRouter:
+    """
+    Intelligent router for AI model selection.
+    
+    Routes requests between local (Ollama) and external providers based on:
+    - Task complexity analysis
+    - Cost constraints
+    - Provider availability
+    - User preferences
+    
+    Usage:
+        router = ModelRouter()
+        response = router.generate("Write a Python function", strategy=RoutingStrategy.HYBRID)
+    """
+    
+    # Task complexity indicators
+    COMPLEXITY_INDICATORS = {
+        "high": [
+            "complex", "architecture", "design pattern", "algorithm",
+            "optimize", "refactor", "debug", "analyze", "review",
+            "explain in detail", "comprehensive", "thorough"
+        ],
+        "medium": [
+            "create", "write", "implement", "build", "generate",
+            "convert", "transform", "summarize", "paraphrase"
+        ],
+        "low": [
+            "list", "show", "display", "get", "find", "check",
+            "simple", "basic", "quick"
+        ]
+    }
+    
+    # Model capabilities (rough estimate)
+    MODEL_CAPABILITIES = {
+        "llama3": {"coding": 0.8, "reasoning": 0.8, "speed": 0.9},
+        "mistral": {"coding": 0.85, "reasoning": 0.85, "speed": 0.9},
+        "qwen": {"coding": 0.9, "reasoning": 0.85, "speed": 0.85},
+        "deepseek": {"coding": 0.95, "reasoning": 0.9, "speed": 0.8},
+        "gpt-4": {"coding": 0.95, "reasoning": 0.95, "speed": 0.9},
+        "gpt-4-turbo": {"coding": 0.95, "reasoning": 0.95, "speed": 0.9},
+        "gpt-3.5-turbo": {"coding": 0.85, "reasoning": 0.8, "speed": 0.95},
+        "claude-3-opus-20240229": {"coding": 0.95, "reasoning": 0.95, "speed": 0.85},
+        "claude-3-sonnet-20240229": {"coding": 0.9, "reasoning": 0.9, "speed": 0.9},
+        "claude-3-haiku-20240307": {"coding": 0.8, "reasoning": 0.8, "speed": 0.95},
+        "gemini-pro": {"coding": 0.85, "reasoning": 0.85, "speed": 0.9},
+        "deepseek-chat": {"coding": 0.9, "reasoning": 0.85, "speed": 0.9},
+        "deepseek-coder": {"coding": 0.95, "reasoning": 0.85, "speed": 0.9},
+    }
+    
+    def __init__(self, config_path: Optional[str] = None):
+        """
+        Initialize the model router.
+        
+        Args:
+            config_path: Path to router configuration
+        """
+        self.config_path = config_path or os.path.expanduser("~/.open_grace/router_config.json")
+        self.vault = get_vault()
+        
+        # Initialize clients
+        self._clients: Dict[ModelProvider, BaseModelClient] = {}
+        self._init_clients()
+        
+        # Load configuration
+        self.config = self._load_config()
+        
+        # Routing history
+        self._history: List[RoutingDecision] = []
+    
+    def _init_clients(self):
+        """Initialize all model clients."""
+        # Local Ollama (always try)
+        try:
+            self._clients[ModelProvider.OLLAMA] = OllamaClient()
+        except:
+            pass
+        
+        # External providers (need API keys from vault)
+        vault = get_vault()
+        
+        # OpenAI
+        openai_key = vault.get_secret("openai_api_key")
+        if openai_key:
+            self._clients[ModelProvider.OPENAI] = OpenAIClient(api_key=openai_key)
+        
+        # Anthropic
+        anthropic_key = vault.get_secret("anthropic_api_key")
+        if anthropic_key:
+            self._clients[ModelProvider.ANTHROPIC] = AnthropicClient(api_key=anthropic_key)
+        
+        # Gemini
+        gemini_key = vault.get_secret("gemini_api_key")
+        if gemini_key:
+            self._clients[ModelProvider.GEMINI] = GeminiClient(api_key=gemini_key)
+        
+        # DeepSeek
+        deepseek_key = vault.get_secret("deepseek_api_key")
+        if deepseek_key:
+            self._clients[ModelProvider.DEEPSEEK] = DeepSeekClient(api_key=deepseek_key)
+    
+    def _load_config(self) -> Dict[str, Any]:
+        """Load router configuration."""
+        if os.path.exists(self.config_path):
+            try:
+                with open(self.config_path) as f:
+                    return json.load(f)
+            except:
+                pass
+        
+        # Default configuration
+        return {
+            "default_strategy": "hybrid",
+            "local_models": ["llama3", "mistral", "qwen"],
+            "external_models": {
+                "coding": "deepseek-coder",
+                "reasoning": "claude-3-opus-20240229",
+                "general": "gpt-4-turbo"
+            },
+            "cost_budget_daily": 10.0,  # USD
+            "cost_budget_monthly": 100.0,  # USD
+            "fallback_enabled": True,
+            "preferred_local": "llama3"
+        }
+    
+    def _save_config(self):
+        """Save router configuration."""
+        Path(self.config_path).parent.mkdir(parents=True, exist_ok=True)
+        with open(self.config_path, 'w') as f:
+            json.dump(self.config, f, indent=2)
+    
+    def _analyze_complexity(self, task: str) -> str:
+        """Analyze task complexity."""
+        task_lower = task.lower()
+        
+        # Count complexity indicators
+        high_count = sum(1 for indicator in self.COMPLEXITY_INDICATORS["high"] 
+                        if indicator in task_lower)
+        medium_count = sum(1 for indicator in self.COMPLEXITY_INDICATORS["medium"] 
+                          if indicator in task_lower)
+        low_count = sum(1 for indicator in self.COMPLEXITY_INDICATORS["low"] 
+                       if indicator in task_lower)
+        
+        # Determine complexity
+        if high_count > 0 or len(task) > 500:
+            return "high"
+        elif medium_count > 0 or len(task) > 200:
+            return "medium"
+        else:
+            return "low"
+    
+    def _select_model(self, task: str, strategy: RoutingStrategy) -> tuple[ModelProvider, str]:
+        """Select the best model for a task."""
+        complexity = self._analyze_complexity(task)
+        
+        # Check which providers are available
+        available = {p: c for p, c in self._clients.items() if c.is_available()}
+        
+        if not available:
+            raise Exception("No model providers available")
+        
+        # Strategy-based selection
+        if strategy == RoutingStrategy.LOCAL_ONLY:
+            if ModelProvider.OLLAMA in available:
+                return ModelProvider.OLLAMA, self.config["preferred_local"]
+            raise Exception("Local models not available")
+        
+        elif strategy == RoutingStrategy.COST_OPTIMIZED:
+            # Prefer local (free), then cheapest external
+            if ModelProvider.OLLAMA in available:
+                return ModelProvider.OLLAMA, self.config["preferred_local"]
+            
+            # Find cheapest available
+            cheapest = None
+            cheapest_cost = float('inf')
+            for provider, client in available.items():
+                if provider != ModelProvider.OLLAMA:
+                    cost = client.config.cost_per_1k_input + client.config.cost_per_1k_output
+                    if cost < cheapest_cost:
+                        cheapest_cost = cost
+                        cheapest = provider
+            
+            if cheapest:
+                return cheapest, available[cheapest].config.model_name
+        
+        elif strategy == RoutingStrategy.QUALITY_FIRST:
+            # Always use best available
+            if complexity == "high":
+                # Prefer Claude or GPT-4 for complex tasks
+                for provider in [ModelProvider.ANTHROPIC, ModelProvider.OPENAI]:
+                    if provider in available:
+                        return provider, available[provider].config.model_name
+            
+            # For coding, prefer DeepSeek
+            if any(word in task.lower() for word in ["code", "program", "function", "class"]):
+                if ModelProvider.DEEPSEEK in available:
+                    return ModelProvider.DEEPSEEK, "deepseek-coder"
+            
+            # Fallback to best available
+            for provider in [ModelProvider.ANTHROPIC, ModelProvider.OPENAI, 
+                           ModelProvider.DEEPSEEK, ModelProvider.OLLAMA]:
+                if provider in available:
+                    return provider, available[provider].config.model_name
+        
+        elif strategy == RoutingStrategy.HYBRID:
+            # Smart routing based on complexity
+            if complexity == "low":
+                # Use local for simple tasks
+                if ModelProvider.OLLAMA in available:
+                    return ModelProvider.OLLAMA, self.config["preferred_local"]
+            
+            elif complexity == "medium":
+                # Use local if available, otherwise cheap external
+                if ModelProvider.OLLAMA in available:
+                    return ModelProvider.OLLAMA, self.config["preferred_local"]
+                
+                # Prefer DeepSeek for cost-effective quality
+                if ModelProvider.DEEPSEEK in available:
+                    return ModelProvider.DEEPSEEK, "deepseek-chat"
+            
+            elif complexity == "high":
+                # Use external for complex tasks
+                if any(word in task.lower() for word in ["code", "program", "debug"]):
+                    if ModelProvider.DEEPSEEK in available:
+                        return ModelProvider.DEEPSEEK, "deepseek-coder"
+                
+                if ModelProvider.ANTHROPIC in available:
+                    return ModelProvider.ANTHROPIC, "claude-3-opus-20240229"
+                elif ModelProvider.OPENAI in available:
+                    return ModelProvider.OPENAI, "gpt-4-turbo"
+        
+        # Default fallback
+        if ModelProvider.OLLAMA in available:
+            return ModelProvider.OLLAMA, self.config["preferred_local"]
+        
+        # Last resort: use any available
+        provider = list(available.keys())[0]
+        return provider, available[provider].config.model_name
+    
+    def generate(self, prompt: str, 
+                 system: Optional[str] = None,
+                 strategy: Optional[RoutingStrategy] = None) -> ModelResponse:
+        """
+        Generate a response using the best model for the task.
+        
+        Args:
+            prompt: The prompt to send
+            system: Optional system message
+            strategy: Routing strategy (defaults to config)
+            
+        Returns:
+            ModelResponse with content and metadata
+        """
+        strategy = strategy or RoutingStrategy(self.config.get("default_strategy", "hybrid"))
+        
+        # Select model
+        provider, model = self._select_model(prompt, strategy)
+        
+        # Get client
+        client = self._clients.get(provider)
+        if not client:
+            raise Exception(f"Selected provider {provider} not available")
+        
+        # Generate
+        start_time = datetime.now()
+        try:
+            response = client.generate(prompt, system)
+            
+            # Record decision
+            decision = RoutingDecision(
+                task=prompt[:100] + "..." if len(prompt) > 100 else prompt,
+                provider=provider,
+                model=model,
+                strategy=strategy,
+                reasoning=f"Complexity: {self._analyze_complexity(prompt)}",
+                estimated_cost=client.estimate_cost(
+                    response.usage.get("prompt_tokens", 0),
+                    response.usage.get("completion_tokens", 0)
+                )
+            )
+            self._history.append(decision)
+            
+            return response
+            
+        except Exception as e:
+            # Try fallback if enabled
+            if self.config.get("fallback_enabled", True):
+                for fallback_provider in [ModelProvider.OLLAMA, ModelProvider.DEEPSEEK]:
+                    if fallback_provider in self._clients and fallback_provider != provider:
+                        try:
+                            fallback_client = self._clients[fallback_provider]
+                            if fallback_client.is_available():
+                                return fallback_client.generate(prompt, system)
+                        except:
+                            continue
+            
+            raise e
+    
+    def chat(self, messages: List[Dict[str, str]],
+             strategy: Optional[RoutingStrategy] = None) -> ModelResponse:
+        """
+        Chat using the best model for the conversation.
+        
+        Args:
+            messages: List of message dicts with 'role' and 'content'
+            strategy: Routing strategy
+            
+        Returns:
+            ModelResponse
+        """
+        # Use last message for complexity analysis
+        last_message = messages[-1]["content"] if messages else ""
+        strategy = strategy or RoutingStrategy(self.config.get("default_strategy", "hybrid"))
+        
+        provider, model = self._select_model(last_message, strategy)
+        client = self._clients.get(provider)
+        
+        if not client:
+            raise Exception(f"Selected provider {provider} not available")
+        
+        return client.chat(messages)
+    
+    def get_available_providers(self) -> List[ModelProvider]:
+        """Get list of available providers."""
+        return [p for p, c in self._clients.items() if c.is_available()]
+    
+    def get_provider_status(self) -> Dict[str, Dict[str, Any]]:
+        """Get status of all providers."""
+        status = {}
+        for provider, client in self._clients.items():
+            status[provider.value] = {
+                "available": client.is_available(),
+                "model": client.config.model_name,
+                "cost_per_1k_input": client.config.cost_per_1k_input,
+                "cost_per_1k_output": client.config.cost_per_1k_output
+            }
+        return status
+    
+    def get_routing_history(self) -> List[Dict[str, Any]]:
+        """Get history of routing decisions."""
+        return [asdict(d) for d in self._history]
+    
+    def set_strategy(self, strategy: RoutingStrategy):
+        """Set the default routing strategy."""
+        self.config["default_strategy"] = strategy.value
+        self._save_config()
+    
+    def add_api_key(self, provider: ModelProvider, api_key: str):
+        """Add an API key for a provider."""
+        key_name = f"{provider.value}_api_key"
+        self.vault.set_secret(key_name, api_key, category="api_key", 
+                             description=f"API key for {provider.value}")
+        
+        # Reinitialize client
+        if provider == ModelProvider.OPENAI:
+            self._clients[provider] = OpenAIClient(api_key=api_key)
+        elif provider == ModelProvider.ANTHROPIC:
+            self._clients[provider] = AnthropicClient(api_key=api_key)
+        elif provider == ModelProvider.GEMINI:
+            self._clients[provider] = GeminiClient(api_key=api_key)
+        elif provider == ModelProvider.DEEPSEEK:
+            self._clients[provider] = DeepSeekClient(api_key=api_key)
+
+
+# Global router instance
+_router: Optional[ModelRouter] = None
+
+
+def get_router() -> ModelRouter:
+    """Get the global router instance."""
+    global _router
+    if _router is None:
+        _router = ModelRouter()
+    return _router
+
+
+def set_router(router: ModelRouter):
+    """Set the global router instance."""
+    global _router
+    _router = router

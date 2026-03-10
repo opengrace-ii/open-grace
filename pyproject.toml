@@ -1,0 +1,81 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "open-grace"
+version = "0.3.0"
+description = "Open Grace TaskForge AI - A Local AI Operating System"
+readme = "README.md"
+license = {text = "MIT"}
+authors = [
+    {name = "opengrace-ii", email = "opengrace@example.com"}
+]
+keywords = ["ai", "automation", "agents", "llm", "ollama", "local-ai"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.109.0",
+    "uvicorn[standard]>=0.27.0",
+    "pydantic>=2.5.0",
+    "typer>=0.9.0",
+    "rich>=13.7.0",
+    "sqlalchemy>=2.0.25",
+    "openai>=1.10.0",
+    "anthropic>=0.18.0",
+    "cryptography>=42.0.0",
+    "psutil>=5.9.8",
+    "croniter>=2.0.1",
+    "httpx>=0.26.0",
+    "python-dotenv>=1.0.0",
+    "pyyaml>=6.0.1",
+]
+
+[project.optional-dependencies]
+vector = ["chromadb>=0.4.22", "faiss-cpu>=1.7.4", "sentence-transformers>=2.2.2"]
+gpu = ["pynvml>=11.5.0"]
+dev = ["pytest>=8.0.0", "pytest-asyncio>=0.23.0", "black>=24.0.0", "isort>=5.13.0", "mypy>=1.8.0"]
+all = ["chromadb>=0.4.22", "faiss-cpu>=1.7.4", "sentence-transformers>=2.2.2", "pynvml>=11.5.0", "pytest>=8.0.0"]
+
+[project.scripts]
+grace = "open_grace.cli.main:main"
+opengrace = "open_grace.cli.main:main"
+
+[project.urls]
+Homepage = "https://github.com/opengrace-ii/open-grace"
+Repository = "https://github.com/opengrace-ii/open-grace"
+Issues = "https://github.com/opengrace-ii/open-grace/issues"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["open_grace*"]
+
+[tool.black]
+line-length = 100
+target-version = ['py311']
+
+[tool.isort]
+profile = "black"
+line_length = 100
+
+[tool.mypy]
+python_version = "3.11"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
