@@ -1,0 +1,83 @@
+version: '3.8'
+
+services:
+  # Open Grace API Server
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: open-grace-api
+    ports:
+      - "8000:8000"
+    environment:
+      - GRACE_API_HOST=0.0.0.0
+      - GRACE_API_PORT=8000
+      - GRACE_SECRET_KEY=${GRACE_SECRET_KEY:-change-me-in-production}
+      - OLLAMA_URL=http://ollama:11434
+      - GRACE_DB_PATH=/data/grace.db
+      - GRACE_VECTOR_STORE_PATH=/data/vector_store
+      - GRACE_LOG_LEVEL=INFO
+    volumes:
+      - ./data:/data
+      - /var/run/docker.sock:/var/run/docker.sock
+    depends_on:
+      - ollama
+    networks:
+      - open-grace-network
+    restart: unless-stopped
+
+  # Open Grace Frontend
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: open-grace-frontend
+    ports:
+      - "5173:5173"
+    environment:
+      - VITE_API_URL=http://localhost:8000
+    depends_on:
+      - api
+    networks:
+      - open-grace-network
+    restart: unless-stopped
+
+  # Ollama (Local LLM Server)
+  ollama:
+    image: ollama/ollama:latest
+    container_name: open-grace-ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama-data:/root/.ollama
+    networks:
+      - open-grace-network
+    restart: unless-stopped
+    # Uncomment for GPU support (NVIDIA)
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
+
+  # Redis (Message Bus for Grace Cloud)
+  redis:
+    image: redis:7-alpine
+    container_name: open-grace-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    networks:
+      - open-grace-network
+    restart: unless-stopped
+
+volumes:
+  ollama-data:
+  redis-data:
+
+networks:
+  open-grace-network:
+    driver: bridge
