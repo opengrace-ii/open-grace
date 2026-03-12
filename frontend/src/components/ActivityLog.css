@@ -1,0 +1,117 @@
+.activity-log-container {
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - 200px);
+  background: #0f172a;
+  border-radius: 12px;
+  border: 1px solid #334155;
+  overflow: hidden;
+}
+
+.log-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 20px;
+  background: #1e293b;
+  border-bottom: 3px solid #0f172a;
+}
+
+.header-title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: #f8fafc;
+}
+
+.header-title h3 {
+  font-size: 16px;
+  font-weight: 600;
+  margin: 0;
+}
+
+.header-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.log-content {
+  flex: 1;
+  padding: 20px;
+  overflow-y: auto;
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  font-size: 13px;
+  line-height: 1.6;
+  background: #020617;
+  color: #e2e8f0;
+}
+
+.log-line {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 4px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  border-left: 3px solid transparent;
+  animation: fadeIn 0.2s ease-out;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateX(-4px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+.log-line:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.log-time {
+  color: #64748b;
+  width: 160px;
+  flex-shrink: 0;
+}
+
+.log-level {
+  width: 70px;
+  flex-shrink: 0;
+  font-weight: 700;
+  text-align: center;
+  padding: 0 4px;
+  border-radius: 4px;
+  font-size: 11px;
+  text-transform: uppercase;
+}
+
+.log-line.info { border-left-color: #3b82f6; }
+.log-line.info .log-level { background: rgba(59, 130, 246, 0.1); color: #60a5fa; }
+
+.log-line.warning { border-left-color: #f59e0b; }
+.log-line.warning .log-level { background: rgba(245, 158, 11, 0.1); color: #fbbf24; }
+
+.log-line.error { border-left-color: #ef4444; }
+.log-line.error .log-level { background: rgba(239, 68, 68, 0.1); color: #f87171; }
+
+.log-msg {
+  color: #e2e8f0;
+}
+
+.empty-logs {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #475569;
+}
+
+.spin {
+  animation: spin 2s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.action-btn.active {
+  color: #3b82f6;
+  background: rgba(59, 130, 246, 0.1);
+}

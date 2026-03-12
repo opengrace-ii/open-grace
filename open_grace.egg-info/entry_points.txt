@@ -1,3 +1,0 @@
-[console_scripts]
-grace = open_grace.cli.main:main
-opengrace = open_grace.cli.main:main

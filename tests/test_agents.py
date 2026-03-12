@@ -7,10 +7,25 @@ from open_grace.agents.coder_agent import CoderAgent
 from open_grace.agents.sysadmin_agent import SysAdminAgent
 
 class DumbMockRouter:
-    async def generate(self, prompt, system=None, strategy=None):
+    async def generate(self, prompt, system=None, strategy=None, response_model=None):
         from open_grace.model_router.clients import ModelResponse, ModelProvider
+        content = "Mocked response"
+        if response_model:
+            if response_model.__name__ == 'ExecutionPlan':
+                content = response_model(
+                    reasoning="Mock reasoning",
+                    estimated_total_minutes=30,
+                    steps=[],
+                    task_id="mock",
+                    original_task="mock"
+                )
+            else:
+                try:
+                    content = response_model()
+                except:
+                    pass
         return ModelResponse(
-            content="Mocked response",
+            content=content,
             provider=ModelProvider.OLLAMA,
             model="mock-model",
             usage={"prompt_tokens": 10, "completion_tokens": 10},
@@ -18,7 +33,7 @@ class DumbMockRouter:
             metadata={}
         )
 
-    async def chat(self, messages, strategy=None):
+    async def chat(self, messages, strategy=None, response_model=None):
         from open_grace.model_router.clients import ModelResponse, ModelProvider
         return ModelResponse(
             content="Mocked chat response",

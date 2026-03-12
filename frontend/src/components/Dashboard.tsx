@@ -1,15 +1,16 @@
 import { useState, useEffect } from 'react'
-import { 
-  Activity, 
-  Cpu, 
-  Users, 
-  CheckCircle, 
-  Clock, 
+import {
+  Activity,
+  Users,
+  CheckCircle,
+  Clock,
   AlertCircle,
   LogOut,
   Plus,
   Server,
-  Shield
+  Shield,
+  FileText,
+  Activity as ActivityIcon
 } from 'lucide-react'
 import { APIClient } from '../api/client'
 import { StatsCard } from './StatsCard'
@@ -17,6 +18,8 @@ import { TaskList } from './TaskList'
 import { AgentList } from './AgentList'
 import { CreateTaskModal } from './CreateTaskModal'
 import { SessionsManager } from './SessionsManager'
+import { ActivityLog } from './ActivityLog'
+import { DiagnosticsPanel } from './DiagnosticsPanel'
 import './Dashboard.css'
 
 interface DashboardProps {
@@ -47,9 +50,15 @@ export function Dashboard({ onLogout }: DashboardProps) {
   const [loading, setLoading] = useState(true)
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [refreshTrigger, setRefreshTrigger] = useState(0)
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'sessions'>('dashboard')
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'sessions' | 'logs' | 'diagnostics'>('dashboard')
 
   useEffect(() => {
+    // Sync tab with URL on mount
+    const path = window.location.pathname.substring(1)
+    if (['sessions', 'logs', 'diagnostics'].includes(path)) {
+      setActiveTab(path as any)
+    }
+    
     loadData()
     const interval = setInterval(loadData, 5000)
     return () => clearInterval(interval)
@@ -90,22 +99,51 @@ export function Dashboard({ onLogout }: DashboardProps) {
       <header className="dashboard-header">
         <div className="header-left">
           <h1>Open Grace</h1>
-          <span className="version">v0.3.0</span>
+          <span className="version">v0.4.0</span>
         </div>
         <div className="header-center">
           <nav className="tab-nav">
             <button 
               className={`tab-btn ${activeTab === 'dashboard' ? 'active' : ''}`}
-              onClick={() => setActiveTab('dashboard')}
+              onClick={() => {
+                setActiveTab('dashboard')
+                window.history.pushState(null, '', '/')
+              }}
             >
               Dashboard
             </button>
             <button 
               className={`tab-btn ${activeTab === 'sessions' ? 'active' : ''}`}
-              onClick={() => setActiveTab('sessions')}
+              onClick={() => {
+                setActiveTab('sessions')
+                window.history.pushState(null, '', '/sessions')
+                APIClient.logActivity('Switched to Sessions tab', 'Navigation')
+              }}
             >
               <Shield size={16} />
               Sessions
+            </button>
+            <button 
+              className={`tab-btn ${activeTab === 'logs' ? 'active' : ''}`}
+              onClick={() => {
+                setActiveTab('logs')
+                window.history.pushState(null, '', '/logs')
+                APIClient.logActivity('Switched to Logs tab', 'Navigation')
+              }}
+            >
+              <FileText size={16} />
+              Logs
+            </button>
+            <button 
+              className={`tab-btn ${activeTab === 'diagnostics' ? 'active' : ''}`}
+              onClick={() => {
+                setActiveTab('diagnostics')
+                window.history.pushState(null, '', '/diagnostics')
+                APIClient.logActivity('Switched to Diagnostics tab', 'Navigation')
+              }}
+            >
+              <ActivityIcon size={16} />
+              Diagnostics
             </button>
           </nav>
         </div>
@@ -188,8 +226,12 @@ export function Dashboard({ onLogout }: DashboardProps) {
               </div>
             </div>
           </>
-        ) : (
+        ) : activeTab === 'sessions' ? (
           <SessionsManager />
+        ) : activeTab === 'logs' ? (
+          <ActivityLog />
+        ) : (
+          <DiagnosticsPanel />
         )}
       </main>
 

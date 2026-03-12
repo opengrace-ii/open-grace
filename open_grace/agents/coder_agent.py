@@ -10,11 +10,13 @@ Specialized agent for software development tasks including:
 
 import os
 import re
+import json
 from typing import Dict, List, Any, Optional
 from dataclasses import dataclass
 from pathlib import Path
 
 from open_grace.agents.base_agent import BaseAgent, AgentTask
+from open_grace.memory.sqlite_store import SQLiteMemoryStore
 
 
 @dataclass
@@ -57,6 +59,7 @@ class CoderAgent(BaseAgent):
     def __init__(self, **kwargs):
         """Initialize the coder agent."""
         super().__init__(name="Coder", **kwargs)
+        self.sqlite = SQLiteMemoryStore()
         
         # Register tools
         self.register_tool("write_file", self._write_file)
@@ -148,6 +151,23 @@ Respond with only the code, no explanations."""
         code = context.get("code", "")
         error = context.get("error", "")
         language = context.get("language", "python")
+        session_id = context.get("session_id", "default")
+        
+        short_error = error.strip().split('\n')[-1] if error else ""
+        
+        # Recall from episodic memory
+        episodes = self.sqlite.get_episodes(agent_id=self.agent_id, limit=20)
+        past_fixes = []
+        for ep in episodes:
+            # Simple substring matching for now based on error signature
+            if short_error and len(short_error) > 5 and short_error in ep.get("context", ""):
+                past_fixes.append(ep)
+        
+        episodic_block = ""
+        if past_fixes:
+            episodic_block = "\nPast similar fixes you performed:\n"
+            for ep in past_fixes[:3]:
+                episodic_block += f"- Context (Error): {ep.get('context')}\n- Fix:\n{ep.get('result')}\n"
         
         system_prompt = """You are a debugging expert. Analyze the code and error, then provide:
 1. Root cause analysis
@@ -167,7 +187,7 @@ EXPLANATION: <why the fix works>"""
 Code:
 ```{language}
 {code}
-```
+```{episodic_block}
 
 Debug this code."""
         
@@ -177,6 +197,15 @@ Debug this code."""
         analysis = self._extract_section(response, "ANALYSIS")
         fixed_code = self._extract_code(response, language)
         explanation = self._extract_section(response, "EXPLANATION")
+        
+        if analysis and fixed_code:
+            self.sqlite.save_episode(
+                session_id=session_id,
+                agent_id=self.agent_id,
+                context=short_error,
+                action="debug_code",
+                result=fixed_code
+            )
         
         return {
             "analysis": analysis,

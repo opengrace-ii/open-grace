@@ -138,7 +138,11 @@ class OllamaClient(BaseModelClient):
                 content=data.get("response", ""),
                 provider=ModelProvider.OLLAMA,
                 model=self.config.model_name,
-                usage={"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
+                usage={
+                    "prompt_tokens": data.get("prompt_eval_count", 0),
+                    "completion_tokens": data.get("eval_count", 0),
+                    "total_tokens": data.get("prompt_eval_count", 0) + data.get("eval_count", 0)
+                },
                 latency_ms=latency,
                 metadata={"done": data.get("done", False)}
             )
@@ -172,7 +176,11 @@ class OllamaClient(BaseModelClient):
                 content=message.get("content", ""),
                 provider=ModelProvider.OLLAMA,
                 model=self.config.model_name,
-                usage={"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
+                usage={
+                    "prompt_tokens": data.get("prompt_eval_count", 0),
+                    "completion_tokens": data.get("eval_count", 0),
+                    "total_tokens": data.get("prompt_eval_count", 0) + data.get("eval_count", 0)
+                },
                 latency_ms=latency,
                 metadata={"done": data.get("done", False)}
             )
@@ -439,11 +447,16 @@ class GeminiClient(BaseModelClient):
             latency = (time.time() - start_time) * 1000
             candidates = data.get("candidates", [{}])[0]
             content = candidates.get("content", {}).get("parts", [{}])[0].get("text", "")
+            usage = data.get("usageMetadata", {})
             return ModelResponse(
                 content=content,
                 provider=ModelProvider.GEMINI,
                 model=self.config.model_name,
-                usage={"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
+                usage={
+                    "prompt_tokens": usage.get("promptTokenCount", 0),
+                    "completion_tokens": usage.get("candidatesTokenCount", 0),
+                    "total_tokens": usage.get("totalTokenCount", 0)
+                },
                 latency_ms=latency,
                 metadata={"finish_reason": candidates.get("finishReason")}
             )
@@ -470,11 +483,16 @@ class GeminiClient(BaseModelClient):
             latency = (time.time() - start_time) * 1000
             candidates = data.get("candidates", [{}])[0]
             content = candidates.get("content", {}).get("parts", [{}])[0].get("text", "")
+            usage = data.get("usageMetadata", {})
             return ModelResponse(
                 content=content,
                 provider=ModelProvider.GEMINI,
                 model=self.config.model_name,
-                usage={"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
+                usage={
+                    "prompt_tokens": usage.get("promptTokenCount", 0),
+                    "completion_tokens": usage.get("candidatesTokenCount", 0),
+                    "total_tokens": usage.get("totalTokenCount", 0)
+                },
                 latency_ms=latency,
                 metadata={"finish_reason": candidates.get("finishReason")}
             )

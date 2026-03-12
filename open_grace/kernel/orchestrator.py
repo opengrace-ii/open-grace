@@ -30,6 +30,9 @@ class TaskStatus(Enum):
     COMPLETED = "completed"
     FAILED = "failed"
     CANCELLED = "cancelled"
+    EVALUATING = "evaluating"
+    BRANCHING = "branching"
+    ROLLING_BACK = "rolling_back"
 
 
 class AgentStatus(Enum):
@@ -49,6 +52,7 @@ class Task:
     status: TaskStatus
     agent_type: Optional[str]
     created_at: datetime
+    id_numeric: int = 0
     started_at: Optional[datetime] = None
     completed_at: Optional[datetime] = None
     result: Any = None
@@ -110,6 +114,7 @@ class GraceOrchestrator:
         # Task management
         self._tasks: Dict[str, Task] = {}
         self._task_queue: asyncio.Queue = asyncio.Queue()
+        self._task_counter: int = 0
         
         # State
         self._initialized = False
@@ -259,9 +264,11 @@ class GraceOrchestrator:
             Task ID
         """
         task_id = f"task_{str(uuid.uuid4())[:8]}"
+        self._task_counter += 1
         
         task = Task(
             id=task_id,
+            id_numeric=self._task_counter,
             description=description,
             status=TaskStatus.PENDING,
             agent_type=agent_type,
@@ -275,9 +282,10 @@ class GraceOrchestrator:
         self._tasks[task_id] = task
         await self._task_queue.put((priority, task_id))
         
-        self.logger.info(f"Task submitted: {description[:50]}... (ID: {task_id})")
+        self.logger.info(f"Task submitted: {description[:50]}... (ID: {task_id}, #{self._task_counter})")
         await self._emit_event("task.submitted", {
             "task_id": task_id,
+            "task_number": self._task_counter,
             "description": description,
             "agent_type": agent_type
         })
@@ -458,19 +466,52 @@ class GraceOrchestrator:
                 task.result = {
                     "content": response.content,
                     "provider": response.provider.value,
-                    "model": response.model
+                    "model": response.model,
+                    "total_tokens": response.usage.get("total_tokens", 0),
+                    "prompt_tokens": response.usage.get("prompt_tokens", 0),
+                    "completion_tokens": response.usage.get("completion_tokens", 0),
+                    "latency_ms": response.latency_ms
                 }
+                task.metadata["model"] = response.model
+                task.metadata["provider"] = response.provider.value
+                task.metadata["total_tokens"] = response.usage.get("total_tokens", 0)
+                task.metadata["latency_ms"] = response.latency_ms
             else:
                 # Execute via agent
                 agent_instance = self._agent_instances.get(agent_id)
                 if agent_instance:
-                    result = await agent_instance.execute(task.description)
+                    result = await agent_instance.execute(task.description, metadata=task.metadata)
                     task.result = result
+                    
+                    # Capture metrics from agent
+                    if hasattr(agent_instance, "last_usage"):
+                        metrics = {
+                            "total_tokens": agent_instance.last_usage.get("total_tokens", 0),
+                            "prompt_tokens": agent_instance.last_usage.get("prompt_tokens", 0),
+                            "completion_tokens": agent_instance.last_usage.get("completion_tokens", 0),
+                            "latency_ms": agent_instance.last_latency_ms,
+                            "model": agent_instance.last_model,
+                            "provider": agent_instance.last_provider
+                        }
+                        
+                        # Merge into result if it's a dict
+                        if isinstance(task.result, dict):
+                            task.result.update(metrics)
+                        elif hasattr(task.result, "model_dump"): # Pydantic
+                            # We can't easily modify the object, but we store in metadata
+                            pass
+                            
+                        # Always store in task metadata for persistence
+                        task.metadata.update(metrics)
                     
                     # Update agent stats
                     agent_info = self._agents[agent_id]
                     agent_info.task_count += 1
                     agent_info.last_active = datetime.now()
+            
+            task.status = TaskStatus.EVALUATING
+            self.logger.info(f"Task evaluating: {task.id}")
+            # Here we would normally plug in an evaluator agent
             
             task.status = TaskStatus.COMPLETED
             self.logger.info(f"Task completed: {task.id}")
@@ -480,13 +521,26 @@ class GraceOrchestrator:
             })
             
         except Exception as e:
-            task.status = TaskStatus.FAILED
+            self.logger.warning(f"Task failed, entering Graph-of-Thoughts branching: {task.id} - {e}")
+            task.status = TaskStatus.BRANCHING
             task.error = str(e)
-            self.logger.error(f"Task failed: {task.id} - {e}")
-            await self._emit_event("task.failed", {
+            
+            # Spawn branching investigation tasks
+            await self._emit_event("task.branching", {
                 "task_id": task.id,
                 "error": str(e)
             })
+            
+            # Create a rollback branch and an investigation branch
+            rollback_task_id = await self.submit_task(f"Rollback state for failed task {task.id}", priority=10)
+            investigate_task_id = await self.submit_task(f"Investigate failure in task {task.id}: {e}", priority=9)
+            
+            # Clone state for contextual investigation
+            if self.memory:
+                self.memory.clone_session(task.id, investigate_task_id)
+                self.memory.clone_session(task.id, rollback_task_id)
+                
+            task.metadata["branches"] = [rollback_task_id, investigate_task_id]
         
         finally:
             task.completed_at = datetime.now()

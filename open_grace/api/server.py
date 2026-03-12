@@ -18,7 +18,10 @@ from open_grace.agents.base_agent import AgentState
 from open_grace.security.auth import AuthManager, get_auth_manager, User
 from open_grace.api.mobile import MobileAPIManager, get_mobile_manager, PushSubscription, MobileNotification
 from open_grace.observability.logger import get_logger
+from open_grace.diagnostics.diagnostics_router import diagnostics_router
+from open_grace.diagnostics.logs import get_backend_logger
 
+backend_logger = get_backend_logger()
 
 # Security
 security = HTTPBearer(auto_error=False)
@@ -30,16 +33,25 @@ class TaskRequest(BaseModel):
     description: str
     agent_type: Optional[str] = None
     priority: int = 5
+    model: Optional[str] = None
 
 
 class TaskResponse(BaseModel):
     """Response with task info."""
     id: str
+    id_numeric: int
     description: str
     status: str
     agent_type: Optional[str]
     created_at: str
     result: Optional[Any] = None
+    model: Optional[str] = None
+    tokens_used: Optional[int] = None
+    latency_ms: Optional[float] = None
+    provider: Optional[str] = None
+    error: Optional[str] = None
+    user: Optional[str] = None
+    client_ip: Optional[str] = None
 
 
 class AgentInfo(BaseModel):
@@ -108,6 +120,22 @@ class APIServer:
             version="0.3.0"
         )
         
+        # Add tracing middleware
+        @self.app.middleware("http")
+        async def trace_activity(request: Request, call_next):
+            start_time = datetime.now()
+            response = await call_next(request)
+            duration = (datetime.now() - start_time).total_seconds()
+            
+            # Don't log health/metrics calls to avoid clutter
+            if request.url.path not in ["/health", "/system/status", "/observability/activity/stream"]:
+                client_host = request.client.host if request.client else "unknown"
+                self.logger.log_activity(
+                    f"API | {request.method} {request.url.path} | {response.status_code} | {client_host} | {duration:.3f}s"
+                )
+                backend_logger.info(f"REQ | {request.method} {request.url.path} | {response.status_code}")
+            return response
+
         # Add CORS middleware
         self.app.add_middleware(
             CORSMiddleware,
@@ -116,6 +144,50 @@ class APIServer:
             allow_methods=["*"],
             allow_headers=["*"],
         )
+        
+        # Add diagnostics exception handler
+        @self.app.exception_handler(Exception)
+        async def backend_exception_handler(request: Request, exc: Exception):
+            import traceback
+            import uuid
+            from open_grace.diagnostics.logs import crash_store, CrashReport
+            from open_grace.diagnostics.health import get_system_health
+            
+            tb = traceback.format_exc()
+            backend_logger.error(f"Unhandled exception at {request.url.path}: {exc}\n{tb}")
+            
+            # Capture request body if possible
+            body = None
+            try:
+                body_bytes = await request.body()
+                if body_bytes:
+                    body = body_bytes.decode('utf-8')
+            except:
+                pass
+
+            # Create crash report
+            report = CrashReport(
+                id=str(uuid.uuid4())[:8],
+                timestamp=datetime.now().isoformat(),
+                url=str(request.url),
+                method=request.method,
+                error=str(exc),
+                traceback=tb,
+                request_body=body,
+                system_state=get_system_health()
+            )
+            crash_store.add_report(report)
+            
+            from fastapi.responses import JSONResponse
+            return JSONResponse(
+                status_code=500,
+                content={
+                    "message": "Internal Server Error",
+                    "crash_id": report.id
+                }
+            )
+            
+        self.app.include_router(diagnostics_router)
         
         self.orchestrator: Optional[GraceOrchestrator] = None
         self.auth_manager: Optional[AuthManager] = None
@@ -147,6 +219,7 @@ class APIServer:
     
     def _register_routes(self):
         """Register API routes."""
+        self.app.include_router(diagnostics_router)
         
         @self.app.get("/")
         async def root():
@@ -162,6 +235,17 @@ class APIServer:
             """Health check endpoint."""
             return {"status": "healthy", "timestamp": datetime.now().isoformat()}
         
+        # Add logging middleware
+        @self.app.middleware("http")
+        async def log_requests(request: Request, call_next):
+            start_time = datetime.now()
+            response = await call_next(request)
+            duration = (datetime.now() - start_time).total_seconds()
+            
+            client_ip = request.client.host if request.client else "unknown"
+            backend_logger.info(f"{request.method} {request.url.path} | Status: {response.status_code} | Duration: {duration:.3f}s | IP: {client_ip}")
+            return response
+
         # Auth endpoints
         @self.app.post("/auth/login", response_model=LoginResponse)
         async def login(request: LoginRequest, request_obj: Request):
@@ -393,14 +477,32 @@ class APIServer:
         
         # Task endpoints
         @self.app.post("/tasks", response_model=TaskResponse)
-        async def create_task(request: TaskRequest):
+        async def create_task(
+            request: TaskRequest,
+            request_obj: Request,
+            current_user: User = Depends(self._get_current_user)
+        ):
             """Create a new task."""
+            if not current_user:
+                raise HTTPException(status_code=401, detail="Authentication required")
+                
             orchestrator = await get_orchestrator()
             
+            client_ip = request_obj.client.host if request_obj.client else 'Unknown'
+            
+            metadata = {
+                "user": current_user.username,
+                "client_ip": client_ip,
+                "is_admin": current_user.is_admin
+            }
+            if request.model:
+                metadata["model"] = request.model
+                
             task_id = await orchestrator.submit_task(
                 description=request.description,
                 agent_type=request.agent_type,
-                priority=request.priority
+                priority=request.priority,
+                metadata=metadata
             )
             
             # Get task info
@@ -412,10 +514,19 @@ class APIServer:
             
             return TaskResponse(
                 id=task.id,
+                id_numeric=task.id_numeric,
                 description=task.description,
                 status=task.status.value,
                 agent_type=task.agent_type,
-                created_at=task.created_at.isoformat() if isinstance(task.created_at, datetime) else task.created_at
+                created_at=task.created_at.isoformat() if isinstance(task.created_at, datetime) else task.created_at,
+                result=task.result,
+                model=(task.result.get("model") if isinstance(task.result, dict) else None) or task.metadata.get("model"),
+                tokens_used=(task.result.get("total_tokens") if isinstance(task.result, dict) else None) or task.metadata.get("total_tokens"),
+                latency_ms=(task.result.get("latency_ms") if isinstance(task.result, dict) else None) or task.metadata.get("latency_ms"),
+                provider=(task.result.get("provider") if isinstance(task.result, dict) else None) or task.metadata.get("provider"),
+                error=task.error,
+                user=task.metadata.get("user") or "Auto",
+                client_ip=task.metadata.get("client_ip") or "Unknown"
             )
         
         @self.app.get("/tasks", response_model=List[TaskResponse])
@@ -435,11 +546,19 @@ class APIServer:
             return [
                 TaskResponse(
                     id=t.id,
+                    id_numeric=t.id_numeric,
                     description=t.description,
                     status=t.status.value,
                     agent_type=t.agent_type,
                     created_at=t.created_at.isoformat() if isinstance(t.created_at, datetime) else t.created_at,
-                    result=t.result
+                    result=t.result,
+                    model=(t.result.get("model") if isinstance(t.result, dict) else None) or t.metadata.get("model"),
+                    tokens_used=(t.result.get("total_tokens") if isinstance(t.result, dict) else None) or t.metadata.get("total_tokens"),
+                    latency_ms=(t.result.get("latency_ms") if isinstance(t.result, dict) else None) or t.metadata.get("latency_ms"),
+                    provider=(t.result.get("provider") if isinstance(t.result, dict) else None) or t.metadata.get("provider"),
+                    error=t.error,
+                    user=t.metadata.get("user") or "Auto",
+                    client_ip=t.metadata.get("client_ip") or "Unknown"
                 )
                 for t in tasks
             ]
@@ -457,11 +576,19 @@ class APIServer:
             
             return TaskResponse(
                 id=task.id,
+                id_numeric=task.id_numeric,
                 description=task.description,
                 status=task.status.value,
                 agent_type=task.agent_type,
-                created_at=t.created_at.isoformat() if isinstance(t.created_at, datetime) else t.created_at,
-                result=t.result
+                created_at=task.created_at.isoformat() if isinstance(task.created_at, datetime) else task.created_at,
+                result=task.result,
+                model=(task.result.get("model") if isinstance(task.result, dict) else None) or task.metadata.get("model"),
+                tokens_used=(task.result.get("total_tokens") if isinstance(task.result, dict) else None) or task.metadata.get("total_tokens"),
+                latency_ms=(task.result.get("latency_ms") if isinstance(task.result, dict) else None) or task.metadata.get("latency_ms"),
+                provider=(task.result.get("provider") if isinstance(task.result, dict) else None) or task.metadata.get("provider"),
+                error=task.error,
+                user=task.metadata.get("user") or "Auto",
+                client_ip=task.metadata.get("client_ip") or "Unknown"
             )
         
         @self.app.post("/tasks/{task_id}/cancel")
@@ -594,6 +721,40 @@ class APIServer:
             
             devices = self.mobile_manager.get_user_devices(current_user.id)
             return {"devices": devices}
+
+        # Observability endpoints
+        @self.app.post("/observability/activity")
+        async def log_frontend_activity(request: Request):
+            """Log an activity from the frontend."""
+            data = await request.json()
+            event = data.get("event", "Unknown Event")
+            category = data.get("category", "UI")
+            details = data.get("details", "")
+            
+            self.logger.log_activity(
+                f"CLIENT | {category} | {event} | {details}"
+            )
+            return {"success": True}
+
+        @self.app.get("/observability/activity/stream")
+        async def stream_activity_log():
+            """Return the last 200 lines of activity log as JSON (backward compat)."""
+            return await get_activity_history()
+
+        @self.app.get("/observability/activity/history")
+        async def get_activity_history(lines: int = 200):
+            """Return the last N lines of the activity log."""
+            log_path = self.logger.log_dir / "activity.log"
+            if not log_path.exists():
+                return {"lines": [], "total": 0}
+            
+            try:
+                with open(log_path, "r") as f:
+                    all_lines = f.readlines()
+                    recent = [l.strip() for l in all_lines[-lines:] if l.strip()]
+                    return {"lines": recent, "total": len(all_lines)}
+            except Exception as e:
+                return {"lines": [f"Error reading log: {str(e)}"], "total": 0}
         
         # WebSocket endpoint for real-time updates
         @self.app.websocket("/ws")

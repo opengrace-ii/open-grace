@@ -138,6 +138,20 @@ class SQLiteMemoryStore:
                 )
             """)
             
+            # Episodic Memory (new for Open Grace Contextual RAG)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS episodic_memory (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    timestamp TEXT NOT NULL,
+                    session_id TEXT NOT NULL,
+                    agent_id TEXT NOT NULL,
+                    context TEXT NOT NULL,
+                    action TEXT NOT NULL,
+                    result TEXT NOT NULL,
+                    metadata TEXT DEFAULT '{}'
+                )
+            """)
+            
             conn.commit()
     
     def save_entry(self, entry: MemoryEntry) -> int:
@@ -152,7 +166,7 @@ class SQLiteMemoryStore:
                  entry.content, entry.metadata)
             )
             conn.commit()
-            return cursor.lastrowid
+            return cursor.lastrowid or 0
     
     def get_entries(self, entry_type: Optional[str] = None,
                     session_id: Optional[str] = None,
@@ -160,7 +174,7 @@ class SQLiteMemoryStore:
         """Get memory entries."""
         with self._get_connection() as conn:
             query = "SELECT * FROM memory WHERE 1=1"
-            params = []
+            params: List[Any] = []
             
             if entry_type:
                 query += " AND entry_type = ?"
@@ -238,7 +252,7 @@ class SQLiteMemoryStore:
         """Get system events."""
         with self._get_connection() as conn:
             query = "SELECT * FROM system_events WHERE 1=1"
-            params = []
+            params: List[Any] = []
             
             if event_type:
                 query += " AND event_type = ?"
@@ -261,6 +275,89 @@ class SQLiteMemoryStore:
                     "event_type": row["event_type"],
                     "source": row["source"],
                     "data": json.loads(row["data"])
+                }
+                for row in rows
+            ]
+
+    def clone_session(self, source_session_id: str, target_session_id: str) -> bool:
+        """
+        Clone all memory entries from one session to another to support DAG branching.
+        
+        Args:
+            source_session_id: The session ID to clone from
+            target_session_id: The new session ID to create
+            
+        Returns:
+            True if entries were cloned, False otherwise
+        """
+        with self._get_connection() as conn:
+            cursor = conn.execute(
+                """
+                INSERT INTO memory (timestamp, session_id, entry_type, content, metadata)
+                SELECT ?, ?, entry_type, content, metadata
+                FROM memory WHERE session_id = ?
+                """,
+                (datetime.now().isoformat(), target_session_id, source_session_id)
+            )
+            count = cursor.rowcount
+            
+            # Clone tasks related to the session as well
+            conn.execute(
+                """
+                INSERT INTO tasks (timestamp, session_id, task_description, plan, results, success, execution_time_ms)
+                SELECT ?, ?, task_description, plan, results, success, execution_time_ms
+                FROM tasks WHERE session_id = ?
+                """,
+                (datetime.now().isoformat(), target_session_id, source_session_id)
+            )
+            
+            conn.commit()
+            return count > 0
+
+    def save_episode(self, session_id: str, agent_id: str, context: str, action: str, result: str, metadata: Optional[Dict[str, Any]] = None) -> int:
+        """Save an episodic memory entry."""
+        if metadata is None:
+            metadata = {}
+        with self._get_connection() as conn:
+            cursor = conn.execute(
+                """
+                INSERT INTO episodic_memory (timestamp, session_id, agent_id, context, action, result, metadata)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (datetime.now().isoformat(), session_id, agent_id, context, action, result, json.dumps(metadata))
+            )
+            conn.commit()
+            return cursor.lastrowid or 0
+            
+    def get_episodes(self, session_id: Optional[str] = None, agent_id: Optional[str] = None, limit: int = 100) -> List[Dict[str, Any]]:
+        """Retrieve episodic memory entries."""
+        with self._get_connection() as conn:
+            query = "SELECT * FROM episodic_memory WHERE 1=1"
+            params: List[Any] = []
+            
+            if session_id:
+                query += " AND session_id = ?"
+                params.append(session_id)
+            if agent_id:
+                query += " AND agent_id = ?"
+                params.append(agent_id)
+                
+            query += " ORDER BY timestamp DESC LIMIT ?"
+            params.append(limit)
+            
+            cursor = conn.execute(query, params)
+            rows = cursor.fetchall()
+            
+            return [
+                {
+                    "id": row["id"],
+                    "timestamp": row["timestamp"],
+                    "session_id": row["session_id"],
+                    "agent_id": row["agent_id"],
+                    "context": row["context"],
+                    "action": row["action"],
+                    "result": row["result"],
+                    "metadata": json.loads(row["metadata"])
                 }
                 for row in rows
             ]

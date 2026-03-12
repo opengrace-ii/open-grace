@@ -125,7 +125,7 @@ class AuthManager:
             jwt_algorithm: JWT signing algorithm
             jwt_expiry_hours: JWT token expiry time
         """
-        self.secret_key = secret_key or secrets.token_hex(32)
+        self.secret_key = secret_key or os.environ.get("GRACE_AUTH_SECRET", "dev-secret-stable-for-persistence")
         self.jwt_algorithm = jwt_algorithm
         self.jwt_expiry_hours = jwt_expiry_hours
         self.logger = get_logger()

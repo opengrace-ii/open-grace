@@ -11,7 +11,8 @@ Provides common functionality for:
 import uuid
 import asyncio
 from abc import ABC, abstractmethod
-from typing import Dict, List, Optional, Any, Callable
+from typing import Dict, List, Optional, Any, Callable, Type
+from pydantic import BaseModel
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
@@ -96,6 +97,12 @@ class BaseAgent(ABC):
         self.agent_id = agent_id or f"agent_{uuid.uuid4().hex[:8]}"
         self.name = name or self.__class__.__name__
         self.state = AgentState.IDLE
+        
+        # Last execution metrics
+        self.last_usage: Dict[str, int] = {}
+        self.last_latency_ms: float = 0.0
+        self.last_model: str = ""
+        self.last_provider: str = ""
         
         # Core components
         self.model_router = model_router or get_router()
@@ -226,6 +233,11 @@ class BaseAgent(ABC):
         """Use a registered tool."""
         if tool_name not in self._tools:
             raise ValueError(f"Tool not found: {tool_name}")
+            
+        from open_grace.diagnostics.guard import credit_guard
+        session_id = self._current_task.id if self._current_task else self.agent_id
+        if not credit_guard.record_tool_call(session_id):
+            raise Exception(f"Credit Guard limit reached: Max tool calls exceeded for session {session_id}")
         
         tool = self._tools[tool_name]
         
@@ -258,13 +270,14 @@ class BaseAgent(ABC):
             "current_task": self._current_task.id if self._current_task else None
         }
     
-    async def execute(self, task_description: str, context: Optional[Dict[str, Any]] = None) -> Any:
+    async def execute(self, task_description: str, context: Optional[Dict[str, Any]] = None, metadata: Optional[Dict[str, Any]] = None) -> Any:
         """
         Convenience method to execute a task from a description.
         
         Args:
             task_description: The task description
             context: Additional context
+            metadata: Additional metadata (includes model choice)
             
         Returns:
             Execution result
@@ -274,27 +287,52 @@ class BaseAgent(ABC):
             id=task_id,
             description=task_description,
             context=context or {},
-            priority=5
+            priority=metadata.get("priority", 5) if metadata else 5
         )
+        task.metadata = metadata or {}
         return await self.process_task(task)
 
-    async def think(self, prompt: str, system: Optional[str] = None) -> str:
+    async def think(self, prompt: str, system: Optional[str] = None, 
+                  model: Optional[str] = None,
+                  response_model: Optional[Type[BaseModel]] = None) -> Any:
         """
         Use the LLM to think about something.
         
         Args:
             prompt: The prompt to think about
             system: Optional system message
-            
-        Returns:
-            LLM response
+            model: Optional explicit model override
+            response_model: Optional Pydantic model for structured output
         """
         self.state = AgentState.THINKING
         
+        # Determine model to use
+        selected_model = model
+        if not selected_model and self._current_task:
+            selected_model = self._current_task.metadata.get("model")
+            
         try:
-            response = await self.model_router.generate(prompt, system=system)
-            if response and hasattr(response, "content"):
-                return str(response.content)
+            response = await self.model_router.generate(prompt, system=system, 
+                                                       model=selected_model,
+                                                       response_model=response_model)
+            if response:
+                # Store metrics
+                self.last_usage = response.usage
+                self.last_latency_ms = response.latency_ms
+                self.last_model = response.model
+                self.last_provider = response.provider.value
+                
+                # Apply credit guard
+                from open_grace.diagnostics.guard import credit_guard
+                session_id = self._current_task.id if self._current_task else self.agent_id
+                total_tokens = response.usage.get("total_tokens", 0)
+                if not credit_guard.record_tokens(session_id, total_tokens):
+                    raise Exception(f"Credit Guard limit reached: Max tokens exceeded for session {session_id}")
+                
+                if hasattr(response, "content"):
+                    if response_model:
+                        return response.content
+                    return str(response.content)
             return ""
         finally:
             self.state = AgentState.IDLE

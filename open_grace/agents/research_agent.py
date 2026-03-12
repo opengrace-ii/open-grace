@@ -101,13 +101,14 @@ class ResearchAgent(BaseAgent):
             # Default: general research
             return await self.research(task.description, task.context)
     
-    async def search(self, description: str, query: Optional[str] = None) -> ResearchResult:
+    async def search(self, description: str, query: Optional[str] = None, model: Optional[str] = None) -> ResearchResult:
         """
         Search for information in indexed documents.
         
         Args:
             description: Description of what to search for
             query: Specific search query
+            model: Optional explicit model override
             
         Returns:
             ResearchResult with findings
@@ -115,8 +116,13 @@ class ResearchAgent(BaseAgent):
         if query is None:
             query = description
         
+        # Determine model
+        selected_model = model
+        if not selected_model and self._current_task:
+            selected_model = self._current_task.metadata.get("model")
+
         # Use RAG to search
-        response = self.rag_engine.query(query)
+        response = self.rag_engine.query(query, model=selected_model)
         
         # Parse findings
         findings = []
@@ -136,13 +142,15 @@ class ResearchAgent(BaseAgent):
         )
     
     async def summarize(self, text: Optional[str],
-                       max_length: str = "3 paragraphs") -> str:
+                       max_length: str = "3 paragraphs",
+                       model: Optional[str] = None) -> str:
         """
         Summarize text.
         
         Args:
             text: Text to summarize
             max_length: Desired length
+            model: Optional explicit model override
             
         Returns:
             Summary
@@ -161,16 +169,18 @@ Guidelines:
         
         user_prompt = f"Summarize the following:\n\n{text[:4000]}"
         
-        return await self.think(user_prompt, system=system_prompt)
+        return await self.think(user_prompt, system=system_prompt, model=model)
     
     async def analyze(self, topic: str, 
-                     context: Optional[Dict[str, Any]] = None) -> AnalysisResult:
+                      context: Optional[Dict[str, Any]] = None,
+                      model: Optional[str] = None) -> AnalysisResult:
         """
         Analyze a topic in depth.
         
         Args:
             topic: Topic to analyze
             context: Additional context
+            model: Optional explicit model override
             
         Returns:
             AnalysisResult
@@ -195,7 +205,7 @@ Respond in JSON format:
             user_prompt += f"Data: {json.dumps(context['data'], indent=2)}\n\n"
         user_prompt += "Provide a comprehensive analysis."
         
-        response = await self.think(user_prompt, system=system_prompt)
+        response = await self.think(user_prompt, system=system_prompt, model=model)
         
         try:
             # Extract JSON
@@ -219,24 +229,31 @@ Respond in JSON format:
             )
     
     async def research(self, topic: str,
-                      context: Optional[Dict[str, Any]] = None) -> ResearchResult:
+                      context: Optional[Dict[str, Any]] = None,
+                      model: Optional[str] = None) -> ResearchResult:
         """
         Conduct comprehensive research on a topic.
         
         Args:
             topic: Research topic
             context: Additional context
+            model: Optional explicit model override
             
         Returns:
             ResearchResult
         """
+        # Determine model
+        selected_model = model
+        if not selected_model and self._current_task:
+            selected_model = self._current_task.metadata.get("model")
+            
         context = context or {}
         
         # First, search for relevant documents
-        search_result = await self.search(topic, topic)
+        search_result = await self.search(topic, topic, model=selected_model)
         
         # Then, analyze the findings
-        analysis = await self.analyze(topic, {"data": search_result.findings})
+        analysis = await self.analyze(topic, {"data": search_result.findings}, model=selected_model)
         
         # Generate comprehensive summary
         system_prompt = """You are a research expert. Synthesize information into a comprehensive report.
@@ -261,7 +278,7 @@ Analysis:
 
 Write a comprehensive research report."""
         
-        summary = await self.think(user_prompt, system=system_prompt)
+        summary = await self.think(user_prompt, system=system_prompt, model=selected_model)
         
         return ResearchResult(
             query=topic,

@@ -169,13 +169,15 @@ class RAGEngine:
         return count
     
     def retrieve_context(self, query: str, 
-                         filter_metadata: Optional[Dict[str, Any]] = None) -> RAGContext:
+                         filter_metadata: Optional[Dict[str, Any]] = None,
+                         model: Optional[str] = None) -> RAGContext:
         """
         Retrieve relevant context for a query.
         
         Args:
             query: The query to search for
             filter_metadata: Optional metadata filter
+            model: Optional model for retrieval reasoning (if any)
             
         Returns:
             RAGContext with retrieved documents
@@ -219,7 +221,8 @@ class RAGEngine:
     
     def query(self, question: str, 
               system_prompt: Optional[str] = None,
-              filter_metadata: Optional[Dict[str, Any]] = None) -> RAGResponse:
+              filter_metadata: Optional[Dict[str, Any]] = None,
+              model: Optional[str] = None) -> RAGResponse:
         """
         Query the RAG system.
         
@@ -227,6 +230,7 @@ class RAGEngine:
             question: The question to answer
             system_prompt: Optional custom system prompt
             filter_metadata: Optional metadata filter for retrieval
+            model: Optional explicit model override
             
         Returns:
             RAGResponse with answer and sources
@@ -235,7 +239,7 @@ class RAGEngine:
         start_time = time.time()
         
         # Retrieve context
-        context = self.retrieve_context(question, filter_metadata)
+        context = self.retrieve_context(question, filter_metadata, model=model)
         
         # Build prompt
         if system_prompt is None:
@@ -250,7 +254,7 @@ Question: {question}
 Please answer the question based on the context provided. Cite the relevant documents."""
         
         # Generate response
-        response = self.model_router.generate(user_prompt, system=system_prompt)
+        response = self.model_router.generate(user_prompt, system=system_prompt, model=model)
         
         latency = (time.time() - start_time) * 1000
         
@@ -273,18 +277,20 @@ Please answer the question based on the context provided. Cite the relevant docu
         )
     
     def query_with_sources(self, question: str,
-                          min_score: float = 0.5) -> Dict[str, Any]:
+                          min_score: float = 0.5,
+                          model: Optional[str] = None) -> Dict[str, Any]:
         """
         Query with detailed source information.
         
         Args:
             question: The question
             min_score: Minimum relevance score for sources
+            model: Optional explicit model override
             
         Returns:
             Dict with answer, sources, and metadata
         """
-        response = self.query(question)
+        response = self.query(question, model=model)
         
         # Filter sources by score
         filtered_sources = [
@@ -301,7 +307,8 @@ Please answer the question based on the context provided. Cite the relevant docu
         }
     
     def summarize_document(self, doc_id: str, 
-                          max_length: str = "3 paragraphs") -> str:
+                          max_length: str = "3 paragraphs",
+                          model: Optional[str] = None) -> str:
         """
         Summarize a document.
         
@@ -326,13 +333,15 @@ Summary:"""
         return response.content
     
     def answer_from_documents(self, question: str, 
-                             doc_ids: List[str]) -> RAGResponse:
+                             doc_ids: List[str],
+                             model: Optional[str] = None) -> RAGResponse:
         """
         Answer a question using specific documents.
         
         Args:
             question: The question
             doc_ids: List of document IDs to use
+            model: Optional explicit model override
             
         Returns:
             RAGResponse

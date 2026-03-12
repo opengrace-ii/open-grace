@@ -1,17 +1,23 @@
-import { useState, useEffect } from 'react'
-import { Play, CheckCircle, XCircle, Clock, RotateCcw, X } from 'lucide-react'
+import React, { useState, useEffect } from 'react'
+import { CheckCircle, XCircle, Clock, RotateCcw, X } from 'lucide-react'
 import { APIClient } from '../api/client'
 import './TaskList.css'
 
 interface Task {
   id: string
+  id_numeric: number
   description: string
-  status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled'
+  status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled' | 'branching' | 'evaluating' | 'rolling_back'
   agent_type: string | null
   created_at: string
   result: any
   model?: string
   tokens_used?: number
+  latency_ms?: number
+  provider?: string
+  error?: string
+  user?: string
+  client_ip?: string
 }
 
 interface TaskListProps {
@@ -23,6 +29,17 @@ export function TaskList({ refreshTrigger }: TaskListProps) {
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState<string>('')
   const [selectedTask, setSelectedTask] = useState<Task | null>(null)
+
+  // --- Column Resizing Logic ---
+  const [columnWidths, setColumnWidths] = useState({
+    task: 300,
+    agent: 100,
+    model: 140,
+    latency: 100,
+    status: 130,
+    created: 180,
+    user: 140
+  })
 
   useEffect(() => {
     loadTasks()
@@ -54,6 +71,7 @@ export function TaskList({ refreshTrigger }: TaskListProps) {
   const handleCancel = async (taskId: string) => {
     try {
       await APIClient.cancelTask(taskId)
+      await APIClient.logActivity(`Cancelled Task: ${taskId}`, 'Task')
       loadTasks()
     } catch (err) {
       console.error('Failed to cancel task:', err)
@@ -83,6 +101,26 @@ export function TaskList({ refreshTrigger }: TaskListProps) {
     return <div className="task-list loading">Loading tasks...</div>
   }
 
+  const handleResizeStart = (e: React.MouseEvent, column: keyof typeof columnWidths) => {
+    e.preventDefault()
+    e.stopPropagation()
+    const startX = e.pageX
+    const startWidth = columnWidths[column]
+
+    const onMouseMove = (e: MouseEvent) => {
+      const newWidth = Math.max(50, startWidth + (e.pageX - startX))
+      setColumnWidths(prev => ({ ...prev, [column]: newWidth }))
+    }
+
+    const onMouseUp = () => {
+      document.removeEventListener('mousemove', onMouseMove)
+      document.removeEventListener('mouseup', onMouseUp)
+    }
+
+    document.addEventListener('mousemove', onMouseMove)
+    document.addEventListener('mouseup', onMouseUp)
+  }
+
   return (
     <div className="task-list">
       <div className="filter-bar">
@@ -95,54 +133,100 @@ export function TaskList({ refreshTrigger }: TaskListProps) {
         </select>
       </div>
 
-      <div className="task-table">
-        <div className="task-header">
-          <span>Task</span>
-          <span>Agent</span>
-          <span>Model</span>
-          <span>Tokens</span>
-          <span>Status</span>
-          <span>Created</span>
-          <span>Actions</span>
-        </div>
-
-        {tasks.length === 0 ? (
-          <div className="no-tasks">No tasks found</div>
-        ) : (
-          tasks.map((task) => (
-            <div key={task.id} className="task-row" onClick={() => setSelectedTask(task)} style={{cursor: 'pointer'}}>
-              <div className="task-description" title={task.description}>
-                {task.description}
-              </div>
-              <div className="task-agent">
-                {task.agent_type || 'Auto'}
-              </div>
-              <div className="task-model">
-                {task.model ? formatModelName(task.model) : <span className="no-data">-</span>}
-              </div>
-              <div className="task-tokens">
-                {task.tokens_used ? task.tokens_used.toLocaleString() : <span className="no-data">-</span>}
-              </div>
-              <div className={getStatusClass(task.status)}>
-                {getStatusIcon(task.status)}
-                {task.status}
-              </div>
-              <div className="task-created">
-                {new Date(task.created_at).toLocaleString()}
-              </div>
-              <div className="task-actions">
-                {(task.status === 'pending' || task.status === 'running') && (
-                  <button 
-                    className="cancel-btn"
-                    onClick={() => handleCancel(task.id)}
-                  >
-                    Cancel
-                  </button>
-                )}
-              </div>
-            </div>
-          ))
-        )}
+      <div className="task-table-wrapper">
+        <table className="task-table-native">
+          <thead>
+            <tr className="task-header">
+              <th style={{ width: columnWidths.task, minWidth: columnWidths.task }}>
+                <div className="th-content">
+                  <span>Task</span>
+                  <div className="resize-handle" onMouseDown={(e) => handleResizeStart(e, 'task')} />
+                </div>
+              </th>
+              <th style={{ width: columnWidths.agent, minWidth: columnWidths.agent }}>
+                <div className="th-content">
+                  <span>Agent</span>
+                  <div className="resize-handle" onMouseDown={(e) => handleResizeStart(e, 'agent')} />
+                </div>
+              </th>
+              <th style={{ width: columnWidths.model, minWidth: columnWidths.model }}>
+                <div className="th-content">
+                  <span>Model</span>
+                  <div className="resize-handle" onMouseDown={(e) => handleResizeStart(e, 'model')} />
+                </div>
+              </th>
+              <th style={{ width: columnWidths.latency, minWidth: columnWidths.latency }}>
+                <div className="th-content">
+                  <span>Latency</span>
+                  <div className="resize-handle" onMouseDown={(e) => handleResizeStart(e, 'latency')} />
+                </div>
+              </th>
+              <th style={{ width: columnWidths.status, minWidth: columnWidths.status }}>
+                <div className="th-content">
+                  <span>Status</span>
+                  <div className="resize-handle" onMouseDown={(e) => handleResizeStart(e, 'status')} />
+                </div>
+              </th>
+              <th style={{ width: columnWidths.created, minWidth: columnWidths.created }}>
+                <div className="th-content">
+                  <span>Created</span>
+                  <div className="resize-handle" onMouseDown={(e) => handleResizeStart(e, 'created')} />
+                </div>
+              </th>
+              <th style={{ width: columnWidths.user, minWidth: columnWidths.user }}>
+                <div className="th-content">
+                  <span>User Info</span>
+                  <div className="resize-handle" onMouseDown={(e) => handleResizeStart(e, 'user')} />
+                </div>
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {tasks.length === 0 ? (
+              <tr>
+                <td colSpan={7} className="no-tasks" style={{textAlign: 'center', padding: '40px', color: '#64748b'}}>No tasks found</td>
+              </tr>
+            ) : (
+              tasks.map((task) => (
+                <tr 
+                  key={task.id} 
+                  className="task-row" 
+                  onClick={() => {
+                    setSelectedTask(task)
+                    APIClient.logActivity(`Viewed Task Details: ${task.id}`, 'UI')
+                  }} 
+                  style={{cursor: 'pointer'}}
+                >
+                  <td className="task-description" style={{ width: columnWidths.task, maxWidth: columnWidths.task }} title={task.description}>
+                    {task.description}
+                  </td>
+                  <td className="task-agent" style={{ width: columnWidths.agent, maxWidth: columnWidths.agent }}>
+                    {task.agent_type || 'Auto'}
+                  </td>
+                  <td className="task-model" style={{ width: columnWidths.model, maxWidth: columnWidths.model }} title={task.provider ? `Provider: ${task.provider}` : ''}>
+                    {task.model ? formatModelName(task.model) : <span className="no-data">-</span>}
+                  </td>
+                  <td className="task-latency" style={{ width: columnWidths.latency, maxWidth: columnWidths.latency }}>
+                    {task.latency_ms ? `${(task.latency_ms / 1000).toFixed(2)}s` : <span className="no-data">-</span>}
+                  </td>
+                  <td style={{ width: columnWidths.status, maxWidth: columnWidths.status, verticalAlign: 'middle' }}>
+                    <div className={getStatusClass(task.status)}>
+                      {getStatusIcon(task.status)}
+                      <span className="status-text">{task.status}</span>
+                    </div>
+                  </td>
+                  <td className="task-created" style={{ width: columnWidths.created, maxWidth: columnWidths.created }}>
+                    {new Date(task.created_at).toLocaleString()}
+                  </td>
+                  <td className="task-user" style={{ width: columnWidths.user, maxWidth: columnWidths.user }}>
+                    <div style={{fontWeight: 600}}>{task.user || 'Auto'}</div>
+                    <div style={{fontSize: '11px', color: '#8b949e'}}>{task.client_ip || 'Unknown'}</div>
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
       </div>
 
       {/* Task Detail Modal */}
@@ -150,10 +234,37 @@ export function TaskList({ refreshTrigger }: TaskListProps) {
         <div className="task-modal-overlay" onClick={() => setSelectedTask(null)}>
           <div className="task-modal" onClick={(e) => e.stopPropagation()}>
             <div className="task-modal-header">
-              <h3>Task Details</h3>
-              <button className="close-btn" onClick={() => setSelectedTask(null)}>
-                <X size={20} />
-              </button>
+              <div className="modal-title-group">
+                <h3>Task Details</h3>
+                <span className="task-number-badge">Task #{selectedTask.id_numeric}</span>
+              </div>
+              <div className="modal-actions">
+                <button 
+                  className="share-btn"
+                  onClick={() => {
+                    let content = '';
+                    if (typeof selectedTask.result === 'string') {
+                      content = selectedTask.result;
+                    } else if (selectedTask.result?.content) {
+                      content = selectedTask.result.content;
+                    } else if (selectedTask.result?.result?.content) {
+                      content = selectedTask.result.result.content;
+                    } else {
+                      content = JSON.stringify(selectedTask.result, null, 2);
+                    }
+                    
+                    const shareText = `*Question:* ${selectedTask.description}\n\n*Response:* ${content}\n\n---\n*Open Grace TaskForge AI* | Task #${selectedTask.id_numeric}\n_Intelligence Unleashed_`;
+                    navigator.clipboard.writeText(shareText);
+                    alert("Response copied to clipboard with branding!");
+                  }}
+                  title="Copy for WhatsApp / Sharing"
+                >
+                  Share Response
+                </button>
+                <button className="close-btn" onClick={() => setSelectedTask(null)}>
+                  <X size={20} />
+                </button>
+              </div>
             </div>
             <div className="task-modal-content">
               <div className="task-detail-row">
@@ -162,10 +273,24 @@ export function TaskList({ refreshTrigger }: TaskListProps) {
               </div>
               <div className="task-detail-row">
                 <span className="label">Status:</span>
-                <span className={`status-badge ${selectedTask.status}`}>
-                  {getStatusIcon(selectedTask.status)}
-                  {selectedTask.status}
-                </span>
+                <div style={{display: 'flex', alignItems: 'center', gap: '12px', flex: 1}}>
+                  <span className={`status-badge ${selectedTask.status}`}>
+                    {getStatusIcon(selectedTask.status)}
+                    {selectedTask.status}
+                  </span>
+                  {(selectedTask.status === 'pending' || selectedTask.status === 'running') && (
+                    <button 
+                      className="cancel-btn"
+                      onClick={() => {
+                        handleCancel(selectedTask.id)
+                        setSelectedTask({...selectedTask, status: 'cancelled'})
+                      }}
+                      style={{marginLeft: 'auto', padding: '4px 12px', fontSize: '12px'}}
+                    >
+                      Cancel Task
+                    </button>
+                  )}
+                </div>
               </div>
               <div className="task-detail-row">
                 <span className="label">Agent:</span>
@@ -175,18 +300,49 @@ export function TaskList({ refreshTrigger }: TaskListProps) {
                 <span className="label">Created:</span>
                 <span className="value">{new Date(selectedTask.created_at).toLocaleString()}</span>
               </div>
-              {selectedTask.model && (
+              {(() => {
+                const model = selectedTask.model || (typeof selectedTask.result === 'object' && selectedTask.result?.model) || null
+                const provider = selectedTask.provider || (typeof selectedTask.result === 'object' && selectedTask.result?.provider) || null
+                const latency = selectedTask.latency_ms || (typeof selectedTask.result === 'object' && selectedTask.result?.latency_ms) || null
+                const tokens = selectedTask.tokens_used || (typeof selectedTask.result === 'object' && selectedTask.result?.total_tokens) || null
+                const isPaid = provider && provider !== 'ollama'
+                return (
+                  <>
+                    {model && (
+                      <div className="task-detail-row">
+                        <span className="label">Model:</span>
+                        <span className="value model-badge-display">
+                          {model}
+                          {isPaid && <span style={{color: '#f59e0b', marginLeft: 8, fontSize: 12}}>$ Paid</span>}
+                          {!isPaid && provider && <span style={{color: '#10b981', marginLeft: 8, fontSize: 12}}>Free (Local)</span>}
+                        </span>
+                      </div>
+                    )}
+                    {provider && (
+                      <div className="task-detail-row">
+                        <span className="label">Provider:</span>
+                        <span className="value" style={{textTransform: 'capitalize'}}>{provider}</span>
+                      </div>
+                    )}
+                    {latency && (
+                      <div className="task-detail-row">
+                        <span className="label">Response Time:</span>
+                        <span className="value">{(Number(latency) / 1000).toFixed(2)}s</span>
+                      </div>
+                    )}
+                    {tokens && (
+                      <div className="task-detail-row">
+                        <span className="label">Tokens:</span>
+                        <span className="value">{Number(tokens).toLocaleString()}</span>
+                      </div>
+                    )}
+                  </>
+                )
+              })()}
+              {selectedTask.error && (
                 <div className="task-detail-row">
-                  <span className="label">Model:</span>
-                  <span className="value model-badge-display">
-                    {selectedTask.model}
-                  </span>
-                </div>
-              )}
-              {selectedTask.tokens_used && (
-                <div className="task-detail-row">
-                  <span className="label">Tokens:</span>
-                  <span className="value">{selectedTask.tokens_used.toLocaleString()}</span>
+                  <span className="label" style={{color: '#ff4b4b'}}>Error:</span>
+                  <span className="value" style={{color: '#ff4b4b'}}>{selectedTask.error}</span>
                 </div>
               )}
               {selectedTask.result && (
@@ -218,18 +374,18 @@ export function TaskList({ refreshTrigger }: TaskListProps) {
                       return content.split('\n').map((line, i) => {
                         // Handle bullet points
                         if (line.trim().startsWith('* ') || line.trim().startsWith('- ')) {
-                          return <div key={i} className="bullet-point">• {line.trim().substring(2)}</div>
+                          return <div key={i} className="bullet-point" dangerouslySetInnerHTML={{ __html: '• ' + line.trim().substring(2) }} />
                         }
                         // Handle numbered lists
                         if (/^\d+\./.test(line.trim())) {
-                          return <div key={i} className="numbered-point">{line.trim()}</div>
+                          return <div key={i} className="numbered-point" dangerouslySetInnerHTML={{ __html: line.trim() }} />
                         }
                         // Handle headers
                         if (line.trim().startsWith('# ')) {
-                          return <h1 key={i} className="result-header">{line.trim().substring(2)}</h1>
+                          return <h1 key={i} className="result-header" dangerouslySetInnerHTML={{ __html: line.trim().substring(2) }} />
                         }
                         if (line.trim().startsWith('## ')) {
-                          return <h2 key={i} className="result-header">{line.trim().substring(3)}</h2>
+                          return <h2 key={i} className="result-header" dangerouslySetInnerHTML={{ __html: line.trim().substring(3) }} />
                         }
                         // Regular line
                         return <div key={i} className="result-line" dangerouslySetInnerHTML={{ __html: line || '&nbsp;' }} />

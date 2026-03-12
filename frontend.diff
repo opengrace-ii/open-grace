@@ -1,0 +1,1668 @@
+diff --git a/frontend/src/App.css b/frontend/src/App.css
+index ce60520..634852d 100644
+--- a/frontend/src/App.css
++++ b/frontend/src/App.css
+@@ -13,4 +13,5 @@ body {
+ 
+ .app {
+   min-height: 100vh;
++  width: 100%;
+ }
+\ No newline at end of file
+diff --git a/frontend/src/api/client.ts b/frontend/src/api/client.ts
+index 4bdd3d5..ca357ba 100644
+--- a/frontend/src/api/client.ts
++++ b/frontend/src/api/client.ts
+@@ -11,7 +11,7 @@ const getApiUrl = () => {
+   return 'http://localhost:8000'
+ }
+ 
+-const API_BASE_URL = getApiUrl()
++export const API_BASE_URL = getApiUrl()
+ 
+ export class APIClient {
+   private static token: string | null = null
+@@ -107,4 +107,16 @@ export class APIClient {
+   static async terminateSession(sessionId: string) {
+     return this.request(`/auth/sessions/${sessionId}`, { method: 'DELETE' })
+   }
++
++  // Observability
++  static async logActivity(event: string, category: string = 'UI', details?: string) {
++    try {
++      await this.request('/observability/activity', {
++        method: 'POST',
++        body: JSON.stringify({ event, category, details })
++      })
++    } catch {
++      // Silently fail - don't break the UI for logging
++    }
++  }
+ }
+\ No newline at end of file
+diff --git a/frontend/src/components/CreateTaskModal.tsx b/frontend/src/components/CreateTaskModal.tsx
+index 253d24f..3acbefa 100644
+--- a/frontend/src/components/CreateTaskModal.tsx
++++ b/frontend/src/components/CreateTaskModal.tsx
+@@ -51,6 +51,7 @@ export function CreateTaskModal({ onClose, onCreated }: CreateTaskModalProps) {
+ 
+     try {
+       await APIClient.createTask(description, agentType || undefined, priority, selectedModel)
++      await APIClient.logActivity(`Created Task: "${description.substring(0, 30)}..."`, 'Task', `Agent: ${agentType || 'Auto'}, Model: ${selectedModel}`)
+       onCreated()
+     } catch (err) {
+       setError(err instanceof Error ? err.message : 'Failed to create task')
+diff --git a/frontend/src/components/Dashboard.css b/frontend/src/components/Dashboard.css
+index 0df98d6..a425ada 100644
+--- a/frontend/src/components/Dashboard.css
++++ b/frontend/src/components/Dashboard.css
+@@ -184,6 +184,8 @@
+   font-size: 18px;
+   font-weight: 600;
+   color: #f8fafc;
++  margin: 0;
++  line-height: 1;
+ }
+ 
+ .create-btn {
+diff --git a/frontend/src/components/Dashboard.tsx b/frontend/src/components/Dashboard.tsx
+index c57576e..918f738 100644
+--- a/frontend/src/components/Dashboard.tsx
++++ b/frontend/src/components/Dashboard.tsx
+@@ -1,15 +1,15 @@
+ import { useState, useEffect } from 'react'
+-import { 
+-  Activity, 
+-  Cpu, 
+-  Users, 
+-  CheckCircle, 
+-  Clock, 
++import {
++  Activity,
++  Users,
++  CheckCircle,
++  Clock,
+   AlertCircle,
+   LogOut,
+   Plus,
+   Server,
+-  Shield
++  Shield,
++  FileText
+ } from 'lucide-react'
+ import { APIClient } from '../api/client'
+ import { StatsCard } from './StatsCard'
+@@ -17,6 +17,7 @@ import { TaskList } from './TaskList'
+ import { AgentList } from './AgentList'
+ import { CreateTaskModal } from './CreateTaskModal'
+ import { SessionsManager } from './SessionsManager'
++import { ActivityLog } from './ActivityLog'
+ import './Dashboard.css'
+ 
+ interface DashboardProps {
+@@ -47,7 +48,7 @@ export function Dashboard({ onLogout }: DashboardProps) {
+   const [loading, setLoading] = useState(true)
+   const [showCreateModal, setShowCreateModal] = useState(false)
+   const [refreshTrigger, setRefreshTrigger] = useState(0)
+-  const [activeTab, setActiveTab] = useState<'dashboard' | 'sessions'>('dashboard')
++  const [activeTab, setActiveTab] = useState<'dashboard' | 'sessions' | 'logs'>('dashboard')
+ 
+   useEffect(() => {
+     loadData()
+@@ -90,7 +91,7 @@ export function Dashboard({ onLogout }: DashboardProps) {
+       <header className="dashboard-header">
+         <div className="header-left">
+           <h1>Open Grace</h1>
+-          <span className="version">v0.3.0</span>
++          <span className="version">v0.4.0</span>
+         </div>
+         <div className="header-center">
+           <nav className="tab-nav">
+@@ -102,11 +103,24 @@ export function Dashboard({ onLogout }: DashboardProps) {
+             </button>
+             <button 
+               className={`tab-btn ${activeTab === 'sessions' ? 'active' : ''}`}
+-              onClick={() => setActiveTab('sessions')}
++              onClick={() => {
++                setActiveTab('sessions')
++                APIClient.logActivity('Switched to Sessions tab', 'Navigation')
++              }}
+             >
+               <Shield size={16} />
+               Sessions
+             </button>
++            <button 
++              className={`tab-btn ${activeTab === 'logs' ? 'active' : ''}`}
++              onClick={() => {
++                setActiveTab('logs')
++                APIClient.logActivity('Switched to Logs tab', 'Navigation')
++              }}
++            >
++              <FileText size={16} />
++              Logs
++            </button>
+           </nav>
+         </div>
+         <div className="header-right">
+@@ -188,8 +202,10 @@ export function Dashboard({ onLogout }: DashboardProps) {
+               </div>
+             </div>
+           </>
+-        ) : (
++        ) : activeTab === 'sessions' ? (
+           <SessionsManager />
++        ) : (
++          <ActivityLog />
+         )}
+       </main>
+ 
+diff --git a/frontend/src/components/MobileChat.css b/frontend/src/components/MobileChat.css
+index 019a462..4b0b064 100644
+--- a/frontend/src/components/MobileChat.css
++++ b/frontend/src/components/MobileChat.css
+@@ -1,436 +1,332 @@
+-/* Mobile Chat Interface */
++/* Mobile Chat - WhatsApp-inspired compact design */
+ .mobile-chat {
+   display: flex;
+   flex-direction: column;
+   height: 100vh;
+-  height: 100dvh; /* Dynamic viewport height for mobile */
+-  background: #0f172a;
++  height: 100dvh;
++  background: #0b141a;
++  color: #e9edef;
++  font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+   overflow: hidden;
++  position: fixed;
++  top: 0;
++  left: 0;
++  right: 0;
++  bottom: 0;
+ }
+ 
+-/* Header */
++/* ---- HEADER ---- */
+ .mobile-header {
+   display: flex;
+   align-items: center;
+-  justify-content: space-between;
+-  padding: 12px 16px;
+-  background: #1e293b;
+-  border-bottom: 1px solid #334155;
+-  position: sticky;
+-  top: 0;
+-  z-index: 100;
++  gap: 10px;
++  padding: 8px 10px;
++  background: #202c33;
++  min-height: 52px;
++  box-sizing: border-box;
++  flex-shrink: 0;
+ }
+ 
+-.icon-btn {
+-  width: 40px;
+-  height: 40px;
++.header-title {
++  flex: 1;
+   display: flex;
+   align-items: center;
+-  justify-content: center;
+-  background: transparent;
+-  border: none;
+-  color: #94a3b8;
+-  border-radius: 50%;
+-  cursor: pointer;
+-  transition: all 0.2s;
++  gap: 10px;
+ }
+ 
+-.icon-btn.logout-btn {
+-  background: #ef4444;
++.bot-avatar {
++  width: 36px;
++  height: 36px;
++  background: #00a884;
++  border-radius: 50%;
++  display: flex;
++  align-items: center;
++  justify-content: center;
+   color: white;
++  flex-shrink: 0;
+ }
+ 
+-.icon-btn.logout-btn:active {
+-  background: #dc2626;
+-}
+-
+-.icon-btn.logout-all-btn {
+-  background: #f59e0b;
+-  color: white;
+-  font-size: 10px;
++.header-info {
++  display: flex;
++  flex-direction: column;
++  line-height: 1.2;
+ }
+ 
+-.icon-btn.logout-all-btn:active {
+-  background: #d97706;
++.header-info span:first-child {
++  font-weight: 600;
++  font-size: 15px;
++  color: #e9edef;
+ }
+ 
+-.icon-btn:active {
+-  background: #334155;
+-  color: #e2e8f0;
++.header-info .status {
++  font-size: 12px;
++  color: #00a884;
+ }
+ 
+-.header-title {
++.header-actions {
+   display: flex;
+-  align-items: center;
+-  gap: 8px;
+-  color: #f8fafc;
+-  font-weight: 600;
+-  font-size: 16px;
++  gap: 14px;
+ }
+ 
+-.header-title svg {
+-  color: #3b82f6;
+-}
+-
+-/* Messages Container */
+-.messages-container {
+-  flex: 1;
+-  overflow-y: auto;
+-  padding: 16px;
++.header-icon-btn {
++  background: transparent;
++  border: none;
++  color: #aebac1;
++  cursor: pointer;
++  padding: 4px;
+   display: flex;
+-  flex-direction: column;
+-  gap: 16px;
+-  -webkit-overflow-scrolling: touch;
+-  background: #0f172a;
+-  min-height: 0;
+-  justify-content: flex-start;
++  align-items: center;
+ }
+ 
+-.messages-container:empty {
+-  display: none;
++.header-icon-btn:active {
++  color: #e9edef;
+ }
+ 
+-/* Welcome Screen */
++/* ---- WELCOME SCREEN ---- */
+ .welcome-screen {
++  flex: 1;
+   display: flex;
+   flex-direction: column;
+   align-items: center;
+-  justify-content: flex-start;
++  justify-content: center;
++  padding: 20px;
+   text-align: center;
+-  padding: 40px 20px;
+-  flex: 1;
+   overflow-y: auto;
+-  background: #0f172a;
+ }
+ 
+ .welcome-icon {
+-  width: 80px;
+-  height: 80px;
+-  background: linear-gradient(135deg, #3b82f6 0%, #7c3aed 100%);
+-  border-radius: 24px;
++  width: 64px;
++  height: 64px;
++  background: linear-gradient(135deg, #00a884, #25d366);
++  border-radius: 20px;
+   display: flex;
+   align-items: center;
+   justify-content: center;
+   color: white;
+-  margin-bottom: 24px;
+-  box-shadow: 0 10px 40px -10px rgba(59, 130, 246, 0.5);
++  margin-bottom: 16px;
+ }
+ 
+ .welcome-screen h2 {
+-  color: #f8fafc;
+-  font-size: 24px;
+-  font-weight: 700;
+-  margin-bottom: 8px;
++  color: #e9edef;
++  font-size: 20px;
++  font-weight: 600;
++  margin: 0 0 6px;
+ }
+ 
+ .welcome-screen p {
+-  color: #64748b;
+-  font-size: 14px;
+-  margin-bottom: 32px;
++  color: #8696a0;
++  font-size: 13px;
++  margin: 0 0 20px;
++  max-width: 260px;
+ }
+ 
+ .quick-actions {
+   display: grid;
+-  grid-template-columns: repeat(2, 1fr);
+-  gap: 12px;
++  grid-template-columns: 1fr 1fr;
++  gap: 8px;
+   width: 100%;
+-  max-width: 320px;
++  max-width: 300px;
+ }
+ 
+ .quick-action-btn {
+-  padding: 16px;
+-  background: #1e293b;
+-  border: 1px solid #334155;
+-  border-radius: 12px;
+-  color: #e2e8f0;
+-  font-size: 14px;
++  background: #202c33;
++  border: 1px solid #2a3942;
++  border-radius: 10px;
++  padding: 14px 10px;
++  color: #e9edef;
++  display: flex;
++  flex-direction: column;
++  align-items: center;
++  gap: 6px;
++  font-size: 12px;
+   font-weight: 500;
+   cursor: pointer;
+-  transition: all 0.2s;
+ }
+ 
+ .quick-action-btn:active {
+-  background: #334155;
+-  border-color: #475569;
+-  transform: scale(0.98);
++  background: #2a3942;
+ }
+ 
+-/* Messages */
+-.message {
++.quick-action-btn svg {
++  color: #00a884;
++}
++
++/* ---- MESSAGES ---- */
++.messages-container {
++  flex: 1;
++  overflow-y: auto;
++  padding: 8px 12px;
+   display: flex;
+-  gap: 12px;
+-  max-width: 85%;
+-  animation: messageSlide 0.3s ease;
++  flex-direction: column;
++  gap: 4px;
++  min-height: 0;
++  -webkit-overflow-scrolling: touch;
+ }
+ 
+-@keyframes messageSlide {
+-  from {
+-    opacity: 0;
+-    transform: translateY(10px);
+-  }
+-  to {
+-    opacity: 1;
+-    transform: translateY(0);
+-  }
++.message {
++  max-width: 82%;
++  padding: 6px 8px 4px;
++  border-radius: 8px;
++  font-size: 14px;
++  line-height: 1.35;
++  position: relative;
++  word-break: break-word;
++  animation: msgIn 0.15s ease-out;
++}
++
++@keyframes msgIn {
++  from { opacity: 0; transform: translateY(4px); }
++  to { opacity: 1; transform: translateY(0); }
+ }
+ 
+ .message.user {
+   align-self: flex-end;
+-  flex-direction: row-reverse;
++  background: #005c4b;
++  border-top-right-radius: 0;
+ }
+ 
+ .message.assistant {
+   align-self: flex-start;
+-}
+-
+-.message-avatar {
+-  width: 32px;
+-  height: 32px;
+-  border-radius: 50%;
+-  display: flex;
+-  align-items: center;
+-  justify-content: center;
+-  flex-shrink: 0;
+-}
+-
+-.message.user .message-avatar {
+-  background: #3b82f6;
+-  color: white;
+-}
+-
+-.message.assistant .message-avatar {
+-  background: #334155;
+-  color: #94a3b8;
+-}
+-
+-.message-content {
+-  display: flex;
+-  flex-direction: column;
+-  gap: 4px;
++  background: #202c33;
++  border-top-left-radius: 0;
+ }
+ 
+ .message-text {
+-  padding: 12px 16px;
+-  border-radius: 18px;
+-  font-size: 15px;
+-  line-height: 1.5;
+-  word-wrap: break-word;
+-}
+-
+-.message.user .message-text {
+-  background: #3b82f6;
+-  color: white;
+-  border-bottom-right-radius: 4px;
+-}
+-
+-.message.assistant .message-text {
+-  background: #1e293b;
+-  color: #e2e8f0;
+-  border: 1px solid #334155;
+-  border-bottom-left-radius: 4px;
++  white-space: pre-wrap;
+ }
+ 
+ .message-meta {
+   display: flex;
+   align-items: center;
+-  gap: 4px;
+-  font-size: 11px;
+-  color: #64748b;
++  justify-content: flex-end;
++  gap: 3px;
++  margin-top: 2px;
+ }
+ 
+-.message.user .message-meta {
+-  justify-content: flex-end;
++.message-time {
++  font-size: 10px;
++  color: rgba(255,255,255,0.45);
+ }
+ 
+ .read-receipt {
+-  color: #3b82f6;
++  color: #53bdeb;
+ }
+ 
+-/* Typing Indicator */
++/* ---- TYPING ---- */
+ .typing-indicator {
++  align-self: flex-start;
++  background: #202c33;
++  padding: 10px 14px;
++  border-radius: 8px;
++  border-top-left-radius: 0;
+   display: flex;
+-  align-items: center;
+   gap: 4px;
+-  padding: 16px;
+-  align-self: flex-start;
+ }
+ 
+ .typing-dot {
+-  width: 8px;
+-  height: 8px;
+-  background: #64748b;
++  width: 6px;
++  height: 6px;
++  background: #8696a0;
+   border-radius: 50%;
+-  animation: typingBounce 1.4s infinite ease-in-out both;
++  animation: bounce 1.4s infinite ease-in-out both;
+ }
+ 
+-.typing-dot:nth-child(1) {
+-  animation-delay: -0.32s;
+-}
+-
+-.typing-dot:nth-child(2) {
+-  animation-delay: -0.16s;
+-}
++.typing-dot:nth-child(1) { animation-delay: -0.32s; }
++.typing-dot:nth-child(2) { animation-delay: -0.16s; }
+ 
+-@keyframes typingBounce {
+-  0%, 80%, 100% {
+-    transform: scale(0);
+-  }
+-  40% {
+-    transform: scale(1);
+-  }
++@keyframes bounce {
++  0%, 80%, 100% { transform: scale(0); }
++  40% { transform: scale(1); }
+ }
+ 
+-/* Input Container */
++/* ---- INPUT AREA (COMPACT) ---- */
+ .input-container {
+   display: flex;
+-  align-items: center;
+-  gap: 8px;
+-  padding: 12px 16px;
+-  padding-bottom: calc(12px + env(safe-area-inset-bottom));
+-  background: #1e293b;
+-  border-top: 1px solid #334155;
+-  min-height: 68px;
+-  box-sizing: border-box;
+-  position: relative;
+-  z-index: 100;
+-}
+-
+-.attach-btn,
+-.mic-btn {
+-  width: 44px;
+-  height: 44px;
+-  display: flex;
+-  align-items: center;
+-  justify-content: center;
+-  background: transparent;
+-  border: none;
+-  color: #64748b;
+-  border-radius: 50%;
+-  cursor: pointer;
++  align-items: flex-end;
++  gap: 6px;
++  padding: 4px 6px;
++  padding-bottom: max(4px, env(safe-area-inset-bottom));
++  background: #202c33;
+   flex-shrink: 0;
+ }
+ 
+-.attach-btn:active,
+-.mic-btn:active {
+-  background: #334155;
+-  color: #e2e8f0;
+-}
+-
+-.input-wrapper {
++.input-pill {
+   flex: 1;
+-  background: #0f172a;
+-  border: 1px solid #334155;
+-  border-radius: 24px;
+-  padding: 10px 16px;
+   display: flex;
+-  align-items: center;
+-  min-height: 44px;
+-  max-height: 44px;
+-  box-sizing: border-box;
+-  position: relative;
++  align-items: flex-end;
++  background: #2a3942;
++  border-radius: 22px;
++  padding: 0 6px 0 16px;
++  min-height: 40px;
++  max-height: 100px;
+   overflow: hidden;
+ }
+ 
+-.input-wrapper input {
+-  flex: 1 1 auto;
+-  width: 100%;
+-  min-width: 50px;
++.input-pill textarea {
++  flex: 1;
+   background: transparent;
+   border: none;
+-  color: #f8fafc;
++  color: #e9edef;
+   font-size: 16px;
+-  line-height: 24px;
+-  height: 24px;
+-  outline: none;
+-  padding: 0;
++  line-height: 22px;
++  padding: 9px 4px;
+   margin: 0;
++  resize: none;
++  outline: none;
+   font-family: inherit;
+-  -webkit-appearance: none;
+-  appearance: none;
+-  display: block;
++  max-height: 80px;
++  overflow-y: auto;
+ }
+ 
+-.input-wrapper input::placeholder {
+-  color: #64748b;
++.input-pill textarea::placeholder {
++  color: #8696a0;
+ }
+ 
+-/* Prevent iOS zoom and input collapse */
+-@supports (-webkit-touch-callout: none) {
+-  .input-wrapper input {
+-    font-size: 16px !important;
+-    transform: translateZ(0);
+-  }
+-}
+-
+-.send-btn {
+-  width: 44px;
+-  height: 44px;
++.pill-icon-btn {
++  background: transparent;
++  border: none;
++  color: #8696a0;
++  padding: 8px 4px;
++  cursor: pointer;
+   display: flex;
+   align-items: center;
+   justify-content: center;
+-  background: #3b82f6;
++  flex-shrink: 0;
++}
++
++/* ---- ACTION BUTTON (Send / Mic) ---- */
++.action-btn {
++  width: 40px;
++  height: 40px;
++  background: #00a884;
+   border: none;
+-  color: white;
+   border-radius: 50%;
+-  cursor: pointer;
++  color: white;
++  display: flex;
++  align-items: center;
++  justify-content: center;
+   flex-shrink: 0;
+-  transition: all 0.2s;
++  cursor: pointer;
+ }
+ 
+-.send-btn:active {
+-  background: #2563eb;
+-  transform: scale(0.95);
++.action-btn:active {
++  transform: scale(0.92);
+ }
+ 
+-.send-btn:disabled {
+-  opacity: 0.5;
+-  cursor: not-allowed;
++.action-btn.mic-btn.recording {
++  background: #ef4444;
++  animation: pulse 1.5s infinite;
+ }
+ 
+-/* Mobile Optimizations */
+-@media (max-width: 480px) {
+-  .message {
+-    max-width: 90%;
+-  }
+-  
+-  .quick-actions {
+-    grid-template-columns: 1fr;
+-  }
+-  
+-  .welcome-screen h2 {
+-    font-size: 20px;
+-  }
+-  
+-  .input-container {
+-    padding: 8px 12px;
+-    padding-bottom: calc(8px + env(safe-area-inset-bottom));
+-  }
+-  
+-  .input-wrapper {
+-    min-height: 40px;
+-    padding: 10px 14px;
+-  }
+-  
+-  .input-wrapper textarea {
+-    font-size: 16px; /* Prevents zoom on iOS */
+-  }
+-  
+-  .send-btn,
+-  .attach-btn,
+-  .mic-btn {
+-    width: 40px;
+-    height: 40px;
+-  }
++@keyframes pulse {
++  0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.6); }
++  70% { box-shadow: 0 0 0 8px rgba(239, 68, 68, 0); }
++  100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+ }
+ 
+-/* Safe area for notched phones */
++/* ---- SAFE AREA ---- */
+ @supports (padding-top: env(safe-area-inset-top)) {
+   .mobile-header {
+-    padding-top: calc(12px + env(safe-area-inset-top));
++    padding-top: max(8px, env(safe-area-inset-top));
+   }
+-}
+-
+-/* Dark mode is default, but respect system preference */
+-@media (prefers-color-scheme: light) {
+-  /* Keep dark mode for consistency */
+ }
+\ No newline at end of file
+diff --git a/frontend/src/components/MobileChat.tsx b/frontend/src/components/MobileChat.tsx
+index 9837443..00ed185 100644
+--- a/frontend/src/components/MobileChat.tsx
++++ b/frontend/src/components/MobileChat.tsx
+@@ -1,5 +1,19 @@
+ import { useState, useRef, useEffect } from 'react'
+-import { Send, Menu, MoreVertical, Paperclip, Mic, Bot, User, Check, CheckCheck, LogOut, Trash2 } from 'lucide-react'
++import { 
++  Send, 
++  Paperclip, 
++  Mic, 
++  Bot, 
++  CheckCheck, 
++  LogOut, 
++  Trash2, 
++  Code,
++  Bug,
++  TestTube,
++  Zap,
++  Phone,
++  Video
++} from 'lucide-react'
+ import { APIClient } from '../api/client'
+ import './MobileChat.css'
+ 
+@@ -14,7 +28,7 @@ interface Message {
+ interface TaskSuggestion {
+   id: string
+   title: string
+-  icon: string
++  icon: 'code' | 'bug' | 'test' | 'zap'
+ }
+ 
+ const QUICK_ACTIONS: TaskSuggestion[] = [
+@@ -28,7 +42,6 @@ const STORAGE_KEY = 'opengrace_mobile_chat_history'
+ 
+ export function MobileChat() {
+   const [messages, setMessages] = useState<Message[]>(() => {
+-    // Load from localStorage on init
+     const saved = localStorage.getItem(STORAGE_KEY)
+     if (saved) {
+       try {
+@@ -45,18 +58,42 @@ export function MobileChat() {
+   })
+   const [input, setInput] = useState('')
+   const [isLoading, setIsLoading] = useState(false)
+-  const [showQuickActions, setShowQuickActions] = useState(true)
++  const [isRecording, setIsRecording] = useState(false)
++  
+   const messagesEndRef = useRef<HTMLDivElement>(null)
+-  const inputRef = useRef<HTMLInputElement>(null)
++  const textareaRef = useRef<HTMLTextAreaElement>(null)
+   const messagesContainerRef = useRef<HTMLDivElement>(null)
++  const recognitionRef = useRef<any>(null)
++
++  // Initialize Speech Recognition
++  useEffect(() => {
++    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
++    if (SpeechRecognition) {
++      recognitionRef.current = new SpeechRecognition()
++      recognitionRef.current.continuous = false
++      recognitionRef.current.interimResults = false
++      recognitionRef.current.lang = 'en-US'
++
++      recognitionRef.current.onresult = (event: any) => {
++        const transcript = event.results[0][0].transcript
++        setInput(prev => prev + (prev ? ' ' : '') + transcript)
++        setIsRecording(false)
++      }
++
++      recognitionRef.current.onerror = (event: any) => {
++        console.error('Speech recognition error', event.error)
++        setIsRecording(false)
++      }
++
++      recognitionRef.current.onend = () => {
++        setIsRecording(false)
++      }
++    }
++  }, [])
+ 
+   // Save messages to localStorage
+   useEffect(() => {
+     localStorage.setItem(STORAGE_KEY, JSON.stringify(messages))
+-    // Hide quick actions if we have messages
+-    if (messages.length > 0) {
+-      setShowQuickActions(false)
+-    }
+   }, [messages])
+ 
+   // Auto-scroll to bottom
+@@ -66,10 +103,27 @@ export function MobileChat() {
+     }
+   }, [messages])
+ 
+-  // Focus input on mount
++  // Handle auto-expanding textarea
+   useEffect(() => {
+-    inputRef.current?.focus()
+-  }, [])
++    if (textareaRef.current) {
++      textareaRef.current.style.height = 'auto'
++      textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 120)}px`
++    }
++  }, [input])
++
++  const toggleRecording = () => {
++    if (!recognitionRef.current) {
++      alert('Speech recognition is not supported in this browser.')
++      return
++    }
++
++    if (isRecording) {
++      recognitionRef.current.stop()
++    } else {
++      setIsRecording(true)
++      recognitionRef.current.start()
++    }
++  }
+ 
+   const sendMessage = async (content: string) => {
+     if (!content.trim() || isLoading) return
+@@ -85,9 +139,7 @@ export function MobileChat() {
+     setMessages(prev => [...prev, userMessage])
+     setInput('')
+     setIsLoading(true)
+-    setShowQuickActions(false)
+ 
+-    // Add assistant placeholder
+     const assistantId = (Date.now() + 1).toString()
+     setMessages(prev => [...prev, {
+       id: assistantId,
+@@ -98,14 +150,10 @@ export function MobileChat() {
+     }])
+ 
+     try {
+-      // Create a task for the AI
+       const response = await APIClient.createTask(content.trim())
+       const taskId = response.id
+       
+-      // Poll for task completion
+       let attempts = 0
+-      const maxAttempts = 60 // 60 seconds timeout
+-      
+       const pollInterval = setInterval(async () => {
+         try {
+           const taskStatus = await APIClient.getTaskStatus(taskId)
+@@ -131,32 +179,21 @@ export function MobileChat() {
+                 : msg
+             ))
+             setIsLoading(false)
+-          } else if (attempts >= maxAttempts) {
++          } else if (attempts >= 60) {
+             clearInterval(pollInterval)
+             setMessages(prev => prev.map(msg => 
+               msg.id === assistantId 
+-                ? { ...msg, content: 'Task is taking longer than expected. Check the dashboard for results.', status: 'sent' }
++                ? { ...msg, content: 'Still processing... Visit the dashboard for more info.', status: 'sent' }
+                 : msg
+             ))
+             setIsLoading(false)
+           }
+-        } catch (pollError) {
++        } catch (err) {
+           clearInterval(pollInterval)
+-          setMessages(prev => prev.map(msg => 
+-            msg.id === assistantId 
+-              ? { ...msg, content: 'Error checking task status. Please check the dashboard.', status: 'error' }
+-              : msg
+-          ))
+           setIsLoading(false)
+         }
+-      }, 1000) // Poll every second
+-      
+-    } catch (error) {
+-      setMessages(prev => prev.map(msg => 
+-        msg.id === assistantId 
+-          ? { ...msg, content: 'Sorry, I encountered an error. Please try again.', status: 'error' }
+-          : msg
+-      ))
++      }, 1000)
++    } catch (err) {
+       setIsLoading(false)
+     }
+   }
+@@ -180,8 +217,8 @@ export function MobileChat() {
+       'test': 'Please write unit tests for the following code:',
+       'zap': 'Please optimize this code for better performance:',
+     }
+-    setInput(prompts[action.icon] || action.title)
+-    inputRef.current?.focus()
++    const prompt = prompts[action.icon] || action.title
++    sendMessage(prompt)
+   }
+ 
+   const formatTime = (date: Date) => {
+@@ -191,60 +228,55 @@ export function MobileChat() {
+   const clearHistory = () => {
+     if (confirm('Clear all chat history?')) {
+       setMessages([])
+-      setShowQuickActions(true)
+       localStorage.removeItem(STORAGE_KEY)
+     }
+   }
+ 
+   const handleLogout = () => {
+-    if (confirm('Logout from this device?')) {
++    if (confirm('Logout?')) {
+       localStorage.removeItem('token')
+       localStorage.removeItem('user')
+       window.location.href = '/login?logout=true'
+     }
+   }
+-  
+-  const handleLogoutAll = () => {
+-    if (confirm('Logout from ALL devices? This will terminate all your sessions.')) {
+-      // Call API to terminate all sessions
+-      fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:8000'}/auth/sessions/terminate-all`, {
+-        method: 'POST',
+-        headers: {
+-          'Authorization': `Bearer ${localStorage.getItem('token')}`,
+-          'Content-Type': 'application/json'
+-        }
+-      }).finally(() => {
+-        localStorage.removeItem('token')
+-        localStorage.removeItem('user')
+-        window.location.href = '/login?logout=all'
+-      })
++
++  const getActionIcon = (icon: string) => {
++    switch (icon) {
++      case 'code': return <Code size={20} />
++      case 'bug': return <Bug size={20} />
++      case 'test': return <TestTube size={20} />
++      case 'zap': return <Zap size={20} />
++      default: return <Bot size={20} />
+     }
+   }
+ 
+   return (
+     <div className="mobile-chat">
+-      {/* Header */}
+       <header className="mobile-header">
+-        <button className="icon-btn" onClick={clearHistory} title="Clear History">
+-          <Trash2 size={20} />
+-        </button>
+         <div className="header-title">
+-          <Bot size={20} />
+-          <span>Open Grace</span>
++          <div className="bot-avatar">
++            <Bot size={24} />
++          </div>
++          <div className="header-info">
++            <span>Open Grace</span>
++            <span className="status">online</span>
++          </div>
++        </div>
++        <div className="header-actions">
++          <button className="header-icon-btn"><Video size={20} /></button>
++          <button className="header-icon-btn"><Phone size={20} /></button>
++          <button className="header-icon-btn" onClick={clearHistory} title="Clear View"><Trash2 size={20} /></button>
++          <button className="header-icon-btn" onClick={handleLogout} title="Logout"><LogOut size={20} /></button>
+         </div>
+-        <button className="icon-btn logout-btn" onClick={handleLogout} title="Logout">
+-          <LogOut size={20} />
+-        </button>
+       </header>
+ 
+-      {/* Welcome Screen or Messages */}
+       {messages.length === 0 ? (
+         <div className="welcome-screen">
+           <div className="welcome-icon">
+             <Bot size={48} />
+           </div>
+-          <h2>How can I help you today?</h2>
+-          <p>Chat with AI agents to code, review, and automate tasks</p>
++          <h2>How can I help you?</h2>
++          <p>Talk to me or choose a quick action below to start an AI task.</p>
+           
+           <div className="quick-actions">
+             {QUICK_ACTIONS.map(action => (
+@@ -253,6 +285,7 @@ export function MobileChat() {
+                 className="quick-action-btn"
+                 onClick={() => handleQuickAction(action)}
+               >
++                {getActionIcon(action.icon)}
+                 {action.title}
+               </button>
+             ))}
+@@ -261,70 +294,55 @@ export function MobileChat() {
+       ) : (
+         <div className="messages-container" ref={messagesContainerRef}>
+           {messages.map((message) => (
+-          <div
+-            key={message.id}
+-            className={`message ${message.role} ${message.status || ''}`}
+-          >
+-            <div className="message-avatar">
+-              {message.role === 'user' ? <User size={16} /> : <Bot size={16} />}
+-            </div>
+-            <div className="message-content">
++            <div key={message.id} className={`message ${message.role}`}>
+               <div className="message-text">{message.content}</div>
+               <div className="message-meta">
+                 <span className="message-time">{formatTime(message.timestamp)}</span>
+-                {message.role === 'user' && message.status === 'sent' && (
++                {message.role === 'user' && (
+                   <CheckCheck size={14} className="read-receipt" />
+                 )}
+               </div>
+             </div>
+-          </div>
+-        ))}
++          ))}
+ 
+-        {isLoading && (
+-          <div className="typing-indicator">
+-            <div className="typing-dot" />
+-            <div className="typing-dot" />
+-            <div className="typing-dot" />
+-          </div>
+-        )}
+-
+-        <div ref={messagesEndRef} />
++          {isLoading && (
++            <div className="typing-indicator">
++              <div className="typing-dot" />
++              <div className="typing-dot" />
++              <div className="typing-dot" />
++            </div>
++          )}
++          <div ref={messagesEndRef} />
+         </div>
+       )}
+ 
+-      {/* Input Area */}
+       <form className="input-container" onSubmit={handleSubmit}>
+-        <button type="button" className="attach-btn">
+-          <Paperclip size={24} />
+-        </button>
+-        
+-        <div className="input-wrapper">
+-          <input
+-            ref={inputRef}
+-            type="text"
++        <div className="input-pill">
++          <textarea
++            ref={textareaRef}
++            rows={1}
+             value={input}
+             onChange={(e) => setInput(e.target.value)}
+             onKeyDown={handleKeyDown}
+-            placeholder="Message Open Grace..."
++            placeholder="Message"
+             disabled={isLoading}
+-            autoComplete="off"
+-            autoCorrect="off"
+-            autoCapitalize="off"
+-            spellCheck="false"
+           />
++          <button type="button" className="pill-icon-btn">
++            <Paperclip size={22} />
++          </button>
+         </div>
+ 
+         {input.trim() ? (
+-          <button 
+-            type="submit" 
+-            className="send-btn"
+-            disabled={isLoading}
+-          >
+-            <Send size={24} />
++          <button type="submit" className="action-btn send-btn" disabled={isLoading}>
++            <Send size={20} />
+           </button>
+         ) : (
+-          <button type="button" className="mic-btn">
+-            <Mic size={24} />
++          <button 
++            type="button" 
++            className={`action-btn mic-btn ${isRecording ? 'recording' : ''}`}
++            onClick={toggleRecording}
++          >
++            <Mic size={20} />
+           </button>
+         )}
+       </form>
+diff --git a/frontend/src/components/TaskList.css b/frontend/src/components/TaskList.css
+index 6ac17a0..8a2bbfa 100644
+--- a/frontend/src/components/TaskList.css
++++ b/frontend/src/components/TaskList.css
+@@ -28,63 +28,120 @@
+   font-size: 14px;
+ }
+ 
+-.task-table {
+-  display: flex;
+-  flex-direction: column;
++.task-table-wrapper {
+   flex: 1;
+   overflow-y: auto;
++  overflow-x: auto;
+   scrollbar-width: thin;
+   scrollbar-color: #334155 #0f172a;
+   min-height: 0;
+ }
+ 
+-.task-table::-webkit-scrollbar {
++.task-table-wrapper::-webkit-scrollbar {
+   width: 8px;
++  height: 8px;
+ }
+ 
+-.task-table::-webkit-scrollbar-track {
++.task-table-wrapper::-webkit-scrollbar-track {
+   background: #0f172a;
+ }
+ 
+-.task-table::-webkit-scrollbar-thumb {
++.task-table-wrapper::-webkit-scrollbar-thumb {
+   background: #334155;
+   border-radius: 4px;
+ }
+ 
+-.task-table::-webkit-scrollbar-thumb:hover {
++.task-table-wrapper::-webkit-scrollbar-thumb:hover {
+   background: #475569;
+ }
+ 
++.task-table-native {
++  width: 100%;
++  min-width: 800px;
++  border-collapse: collapse;
++  table-layout: fixed;
++  text-align: left;
++}
++
+ .task-header {
+-  display: grid;
+-  grid-template-columns: 2fr 1fr 120px 180px 100px;
+-  gap: 16px;
+-  padding: 12px 24px;
+   background: #0f172a;
++  border-bottom: 2px solid #334155;
++  position: sticky;
++  top: 0;
++  z-index: 10;
++}
++
++.task-header th {
++  padding: 0; /* Removing padding to allow full-height handle */
+   font-size: 12px;
+   font-weight: 600;
+   color: #64748b;
+   text-transform: uppercase;
+   letter-spacing: 0.5px;
+-  position: sticky;
+-  top: 0;
+-  z-index: 10;
+-  border-bottom: 2px solid #334155;
++  white-space: nowrap;
++  position: relative;
+ }
+ 
+-.task-row {
+-  display: grid;
+-  grid-template-columns: 2fr 1fr 120px 180px 100px;
+-  gap: 16px;
+-  padding: 16px 24px;
+-  border-bottom: 1px solid #334155;
++.th-content {
++  display: flex;
+   align-items: center;
++  justify-content: space-between;
++  width: 100%;
++  height: 100%;
++  padding: 10px 12px;
++  box-sizing: border-box;
++}
++
++.resize-handle {
++  width: 4px;
++  height: 20px;
++  background: #334155;
++  cursor: col-resize;
++  border-radius: 2px;
++  transition: background 0.2s, width 0.2s;
++  margin-right: -8px; /* Push slightly out */
++}
++
++.resize-handle:hover,
++.resize-handle:active {
++  background: #3b82f6;
++  width: 6px;
++}
++
++/* Base widths for the spans that control the column sizes */
++th.col-task { width: 300px; }
++th.col-agent { width: 100px; }
++th.col-model { width: 140px; }
++th.col-latency { width: 100px; }
++th.col-status { width: 130px; }
++th.col-created { width: 180px; }
++th.col-user { width: 140px; }
++
++.task-row td {
++  padding: 12px 12px;
++  border-bottom: 1px solid #334155;
++  vertical-align: middle;
+ }
+ 
+ .task-row:hover {
+   background: #252f47;
+ }
+ 
++/* Flexible, resizable columns styling for content */
++td.col-task, td.col-agent, td.col-model, td.col-latency, td.col-status, td.col-created, td.col-user {
++  overflow: hidden;
++  text-overflow: ellipsis;
++  white-space: nowrap;
++}
++
++/* Ensure padding on left/right edges */
++.task-header th:first-child, .task-row td:first-child {
++  padding-left: 24px;
++}
++.task-header th:last-child, .task-row td:last-child {
++  padding-right: 24px;
++}
++
+ .task-description {
+   color: #f8fafc;
+   font-size: 14px;
+@@ -104,12 +161,18 @@
+   font-weight: 500;
+ }
+ 
+-.task-tokens {
++.task-tokens,
++.task-latency {
+   color: #fbbf24;
+   font-size: 12px;
+   font-family: 'JetBrains Mono', monospace;
+ }
+ 
++.task-actions {
++  display: flex;
++  justify-content: flex-end;
++}
++
+ .no-data {
+   color: #475569;
+ }
+diff --git a/frontend/src/components/TaskList.tsx b/frontend/src/components/TaskList.tsx
+index 0519542..e2a0e0b 100644
+--- a/frontend/src/components/TaskList.tsx
++++ b/frontend/src/components/TaskList.tsx
+@@ -1,17 +1,22 @@
+ import { useState, useEffect } from 'react'
+-import { Play, CheckCircle, XCircle, Clock, RotateCcw, X } from 'lucide-react'
++import { CheckCircle, XCircle, Clock, RotateCcw, X } from 'lucide-react'
+ import { APIClient } from '../api/client'
+ import './TaskList.css'
+ 
+ interface Task {
+   id: string
+   description: string
+-  status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled'
++  status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled' | 'branching' | 'evaluating' | 'rolling_back'
+   agent_type: string | null
+   created_at: string
+   result: any
+   model?: string
+   tokens_used?: number
++  latency_ms?: number
++  provider?: string
++  error?: string
++  user?: string
++  client_ip?: string
+ }
+ 
+ interface TaskListProps {
+@@ -54,6 +59,7 @@ export function TaskList({ refreshTrigger }: TaskListProps) {
+   const handleCancel = async (taskId: string) => {
+     try {
+       await APIClient.cancelTask(taskId)
++      await APIClient.logActivity(`Cancelled Task: ${taskId}`, 'Task')
+       loadTasks()
+     } catch (err) {
+       console.error('Failed to cancel task:', err)
+@@ -83,6 +89,49 @@ export function TaskList({ refreshTrigger }: TaskListProps) {
+     return <div className="task-list loading">Loading tasks...</div>
+   }
+ 
++  // --- Column Resizing Logic ---
++  const [columnWidths, setColumnWidths] = useState({
++    task: 300,
++    agent: 100,
++    model: 140,
++    latency: 100,
++    status: 130,
++    created: 180,
++    user: 140
++  })
++
++  const handleResizeStart = (e: React.MouseEvent, column: keyof typeof columnWidths) => {
++    e.preventDefault()
++    e.stopPropagation()
++    const startX = e.pageX
++    const startWidth = columnWidths[column]
++
++    const onMouseMove = (e: MouseEvent) => {
++      const newWidth = Math.max(50, startWidth + (e.pageX - startX))
++      setColumnWidths(prev => ({ ...prev, [column]: newWidth }))
++    }
++
++    const onMouseUp = () => {
++      document.removeEventListener('mousemove', onMouseMove)
++      document.removeEventListener('mouseup', onMouseUp)
++    }
++
++    document.addEventListener('mousemove', onMouseMove)
++    document.addEventListener('mouseup', onMouseUp)
++  }
++
++  const ResizableTH = ({ name, label }: { name: keyof typeof columnWidths, label: string }) => (
++    <th style={{ width: columnWidths[name], minWidth: columnWidths[name] }}>
++      <div className="th-content">
++        <span>{label}</span>
++        <div 
++          className="resize-handle" 
++          onMouseDown={(e) => handleResizeStart(e, name)}
++        />
++      </div>
++    </th>
++  )
++
+   return (
+     <div className="task-list">
+       <div className="filter-bar">
+@@ -95,54 +144,63 @@ export function TaskList({ refreshTrigger }: TaskListProps) {
+         </select>
+       </div>
+ 
+-      <div className="task-table">
+-        <div className="task-header">
+-          <span>Task</span>
+-          <span>Agent</span>
+-          <span>Model</span>
+-          <span>Tokens</span>
+-          <span>Status</span>
+-          <span>Created</span>
+-          <span>Actions</span>
+-        </div>
+-
+-        {tasks.length === 0 ? (
+-          <div className="no-tasks">No tasks found</div>
+-        ) : (
+-          tasks.map((task) => (
+-            <div key={task.id} className="task-row" onClick={() => setSelectedTask(task)} style={{cursor: 'pointer'}}>
+-              <div className="task-description" title={task.description}>
+-                {task.description}
+-              </div>
+-              <div className="task-agent">
+-                {task.agent_type || 'Auto'}
+-              </div>
+-              <div className="task-model">
+-                {task.model ? formatModelName(task.model) : <span className="no-data">-</span>}
+-              </div>
+-              <div className="task-tokens">
+-                {task.tokens_used ? task.tokens_used.toLocaleString() : <span className="no-data">-</span>}
+-              </div>
+-              <div className={getStatusClass(task.status)}>
+-                {getStatusIcon(task.status)}
+-                {task.status}
+-              </div>
+-              <div className="task-created">
+-                {new Date(task.created_at).toLocaleString()}
+-              </div>
+-              <div className="task-actions">
+-                {(task.status === 'pending' || task.status === 'running') && (
+-                  <button 
+-                    className="cancel-btn"
+-                    onClick={() => handleCancel(task.id)}
+-                  >
+-                    Cancel
+-                  </button>
+-                )}
+-              </div>
+-            </div>
+-          ))
+-        )}
++      <div className="task-table-wrapper">
++        <table className="task-table-native">
++          <thead>
++            <tr className="task-header">
++              <ResizableTH name="task" label="Task" />
++              <ResizableTH name="agent" label="Agent" />
++              <ResizableTH name="model" label="Model" />
++              <ResizableTH name="latency" label="Latency" />
++              <ResizableTH name="status" label="Status" />
++              <ResizableTH name="created" label="Created" />
++              <ResizableTH name="user" label="User Info" />
++            </tr>
++          </thead>
++          <tbody>
++            {tasks.length === 0 ? (
++              <tr>
++                <td colSpan={7} className="no-tasks" style={{textAlign: 'center', padding: '40px', color: '#64748b'}}>No tasks found</td>
++              </tr>
++            ) : (
++              tasks.map((task) => (
++                <tr 
++                  key={task.id} 
++                  className="task-row" 
++                  onClick={() => {
++                    setSelectedTask(task)
++                    APIClient.logActivity(`Viewed Task Details: ${task.id}`, 'UI')
++                  }} 
++                  style={{cursor: 'pointer'}}
++                >
++                  <td className="task-description" style={{ width: columnWidths.task, maxWidth: columnWidths.task }} title={task.description}>
++                    {task.description}
++                  </td>
++                  <td className="task-agent" style={{ width: columnWidths.agent, maxWidth: columnWidths.agent }}>
++                    {task.agent_type || 'Auto'}
++                  </td>
++                  <td className="task-model" style={{ width: columnWidths.model, maxWidth: columnWidths.model }} title={task.provider ? `Provider: ${task.provider}` : ''}>
++                    {task.model ? formatModelName(task.model) : <span className="no-data">-</span>}
++                  </td>
++                  <td className="task-latency" style={{ width: columnWidths.latency, maxWidth: columnWidths.latency }}>
++                    {task.latency_ms ? `${(task.latency_ms / 1000).toFixed(2)}s` : <span className="no-data">-</span>}
++                  </td>
++                  <td className={getStatusClass(task.status)} style={{ width: columnWidths.status, maxWidth: columnWidths.status }}>
++                    {getStatusIcon(task.status)}
++                    {task.status}
++                  </td>
++                  <td className="task-created" style={{ width: columnWidths.created, maxWidth: columnWidths.created }}>
++                    {new Date(task.created_at).toLocaleString()}
++                  </td>
++                  <td className="task-user" style={{ width: columnWidths.user, maxWidth: columnWidths.user }}>
++                    <div style={{fontWeight: 600}}>{task.user || 'Auto'}</div>
++                    <div style={{fontSize: '11px', color: '#8b949e'}}>{task.client_ip || 'Unknown'}</div>
++                  </td>
++                </tr>
++              ))
++            )}
++          </tbody>
++        </table>
+       </div>
+ 
+       {/* Task Detail Modal */}
+@@ -162,10 +220,24 @@ export function TaskList({ refreshTrigger }: TaskListProps) {
+               </div>
+               <div className="task-detail-row">
+                 <span className="label">Status:</span>
+-                <span className={`status-badge ${selectedTask.status}`}>
+-                  {getStatusIcon(selectedTask.status)}
+-                  {selectedTask.status}
+-                </span>
++                <div style={{display: 'flex', alignItems: 'center', gap: '12px', flex: 1}}>
++                  <span className={`status-badge ${selectedTask.status}`}>
++                    {getStatusIcon(selectedTask.status)}
++                    {selectedTask.status}
++                  </span>
++                  {(selectedTask.status === 'pending' || selectedTask.status === 'running') && (
++                    <button 
++                      className="cancel-btn"
++                      onClick={() => {
++                        handleCancel(selectedTask.id)
++                        setSelectedTask({...selectedTask, status: 'cancelled'})
++                      }}
++                      style={{marginLeft: 'auto', padding: '4px 12px', fontSize: '12px'}}
++                    >
++                      Cancel Task
++                    </button>
++                  )}
++                </div>
+               </div>
+               <div className="task-detail-row">
+                 <span className="label">Agent:</span>
+@@ -175,18 +247,49 @@ export function TaskList({ refreshTrigger }: TaskListProps) {
+                 <span className="label">Created:</span>
+                 <span className="value">{new Date(selectedTask.created_at).toLocaleString()}</span>
+               </div>
+-              {selectedTask.model && (
+-                <div className="task-detail-row">
+-                  <span className="label">Model:</span>
+-                  <span className="value model-badge-display">
+-                    {selectedTask.model}
+-                  </span>
+-                </div>
+-              )}
+-              {selectedTask.tokens_used && (
++              {(() => {
++                const model = selectedTask.model || (typeof selectedTask.result === 'object' && selectedTask.result?.model) || null
++                const provider = selectedTask.provider || (typeof selectedTask.result === 'object' && selectedTask.result?.provider) || null
++                const latency = selectedTask.latency_ms || (typeof selectedTask.result === 'object' && selectedTask.result?.latency_ms) || null
++                const tokens = selectedTask.tokens_used || (typeof selectedTask.result === 'object' && selectedTask.result?.total_tokens) || null
++                const isPaid = provider && provider !== 'ollama'
++                return (
++                  <>
++                    {model && (
++                      <div className="task-detail-row">
++                        <span className="label">Model:</span>
++                        <span className="value model-badge-display">
++                          {model}
++                          {isPaid && <span style={{color: '#f59e0b', marginLeft: 8, fontSize: 12}}>$ Paid</span>}
++                          {!isPaid && provider && <span style={{color: '#10b981', marginLeft: 8, fontSize: 12}}>Free (Local)</span>}
++                        </span>
++                      </div>
++                    )}
++                    {provider && (
++                      <div className="task-detail-row">
++                        <span className="label">Provider:</span>
++                        <span className="value" style={{textTransform: 'capitalize'}}>{provider}</span>
++                      </div>
++                    )}
++                    {latency && (
++                      <div className="task-detail-row">
++                        <span className="label">Response Time:</span>
++                        <span className="value">{(Number(latency) / 1000).toFixed(2)}s</span>
++                      </div>
++                    )}
++                    {tokens && (
++                      <div className="task-detail-row">
++                        <span className="label">Tokens:</span>
++                        <span className="value">{Number(tokens).toLocaleString()}</span>
++                      </div>
++                    )}
++                  </>
++                )
++              })()}
++              {selectedTask.error && (
+                 <div className="task-detail-row">
+-                  <span className="label">Tokens:</span>
+-                  <span className="value">{selectedTask.tokens_used.toLocaleString()}</span>
++                  <span className="label" style={{color: '#ff4b4b'}}>Error:</span>
++                  <span className="value" style={{color: '#ff4b4b'}}>{selectedTask.error}</span>
+                 </div>
+               )}
+               {selectedTask.result && (
+@@ -218,18 +321,18 @@ export function TaskList({ refreshTrigger }: TaskListProps) {
+                       return content.split('\n').map((line, i) => {
+                         // Handle bullet points
+                         if (line.trim().startsWith('* ') || line.trim().startsWith('- ')) {
+-                          return <div key={i} className="bullet-point">• {line.trim().substring(2)}</div>
++                          return <div key={i} className="bullet-point" dangerouslySetInnerHTML={{ __html: '• ' + line.trim().substring(2) }} />
+                         }
+                         // Handle numbered lists
+                         if (/^\d+\./.test(line.trim())) {
+-                          return <div key={i} className="numbered-point">{line.trim()}</div>
++                          return <div key={i} className="numbered-point" dangerouslySetInnerHTML={{ __html: line.trim() }} />
+                         }
+                         // Handle headers
+                         if (line.trim().startsWith('# ')) {
+-                          return <h1 key={i} className="result-header">{line.trim().substring(2)}</h1>
++                          return <h1 key={i} className="result-header" dangerouslySetInnerHTML={{ __html: line.trim().substring(2) }} />
+                         }
+                         if (line.trim().startsWith('## ')) {
+-                          return <h2 key={i} className="result-header">{line.trim().substring(3)}</h2>
++                          return <h2 key={i} className="result-header" dangerouslySetInnerHTML={{ __html: line.trim().substring(3) }} />
+                         }
+                         // Regular line
+                         return <div key={i} className="result-line" dangerouslySetInnerHTML={{ __html: line || '&nbsp;' }} />
+diff --git a/frontend/src/index.css b/frontend/src/index.css
+index 08a3ac9..fb92a9f 100644
+--- a/frontend/src/index.css
++++ b/frontend/src/index.css
+@@ -24,8 +24,6 @@ a:hover {
+ 
+ body {
+   margin: 0;
+-  display: flex;
+-  place-items: center;
+   min-width: 320px;
+   min-height: 100vh;
+ }

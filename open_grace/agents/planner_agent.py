@@ -7,30 +7,36 @@ that can be executed by other agents or the orchestrator.
 
 import json
 from typing import Dict, List, Any, Optional
-from dataclasses import dataclass
+from pydantic import BaseModel, Field
 
 from open_grace.agents.base_agent import BaseAgent, AgentTask
 
 
-@dataclass
-class PlanStep:
+class PlanStep(BaseModel):
     """A single step in an execution plan."""
-    step_number: int
-    description: str
-    agent_type: str  # Which agent should execute this
-    estimated_time: int  # Estimated time in seconds
-    dependencies: List[int]  # Step numbers this depends on
-    parameters: Dict[str, Any]  # Parameters for the step
+    step_number: int = Field(description="Step sequence number")
+    description: str = Field(description="Clear description of what to do")
+    agent_type: str = Field(description="Which agent should execute this (e.g. coder, sysadmin, research)")
+    estimated_minutes: int = Field(default=10, description="Estimated time in minutes")
+    dependencies: List[int] = Field(default_factory=list, description="Step numbers this depends on")
+    parameters: Dict[str, Any] = Field(default_factory=dict, description="Parameters for the step")
+
+    @property
+    def estimated_time(self) -> int:
+        return self.estimated_minutes * 60
 
 
-@dataclass
-class ExecutionPlan:
+class ExecutionPlan(BaseModel):
     """A complete execution plan."""
-    task_id: str
-    original_task: str
-    steps: List[PlanStep]
-    estimated_total_time: int
-    reasoning: str
+    reasoning: str = Field(description="Brief explanation of your approach")
+    estimated_total_minutes: int = Field(default=30)
+    steps: List[PlanStep] = Field(description="Sequence of execution steps")
+    task_id: str = Field(default="")
+    original_task: str = Field(default="")
+    
+    @property
+    def estimated_total_time(self) -> int:
+        return self.estimated_total_minutes * 60
 
 
 class PlannerAgent(BaseAgent):
@@ -103,64 +109,22 @@ For each step, provide:
 3. Required agent type (coder, sysadmin, or research)
 4. Estimated time in minutes
 5. Dependencies on previous steps
-6. Any parameters needed
-
-Respond in JSON format:
-{
-  "reasoning": "Brief explanation of your approach",
-  "estimated_total_minutes": 30,
-  "steps": [
-    {
-      "step_number": 1,
-      "description": "What to do",
-      "agent_type": "coder",
-      "estimated_minutes": 10,
-      "dependencies": [],
-      "parameters": {}
-    }
-  ]
-}"""
+6. Any parameters needed"""
         
         user_prompt = f"Task: {task_description}\n\n"
         if context:
             user_prompt += f"Context: {json.dumps(context, indent=2)}\n\n"
-        user_prompt += "Create an execution plan:"
+        user_prompt += "Create an execution plan."
         
-        # Get plan from LLM
-        response = await self.think(user_prompt, system=system_prompt)
-        
-        # Parse the plan
         try:
-            # Extract JSON from response
-            json_start = response.find('{')
-            json_end = response.rfind('}') + 1
-            if json_start >= 0 and json_end > json_start:
-                plan_data = json.loads(response[json_start:json_end])
-            else:
-                plan_data = json.loads(response)
+            # Request parsed ExecutionPlan directly from the model router
+            plan: ExecutionPlan = await self.think(user_prompt, system=system_prompt, response_model=ExecutionPlan)
+            plan.task_id = f"plan_{id(task_description) % 10000}"
+            plan.original_task = task_description
+            return plan
             
-            # Build ExecutionPlan
-            steps = []
-            for step_data in plan_data.get("steps", []):
-                steps.append(PlanStep(
-                    step_number=step_data["step_number"],
-                    description=step_data["description"],
-                    agent_type=step_data["agent_type"],
-                    estimated_time=step_data["estimated_minutes"] * 60,
-                    dependencies=step_data.get("dependencies", []),
-                    parameters=step_data.get("parameters", {})
-                ))
-            
-            return ExecutionPlan(
-                task_id=f"plan_{id(task_description) % 10000}",
-                original_task=task_description,
-                steps=steps,
-                estimated_total_time=plan_data.get("estimated_total_minutes", 0) * 60,
-                reasoning=plan_data.get("reasoning", "")
-            )
-            
-        except json.JSONDecodeError:
-            # Fallback: create simple plan
+        except Exception as e:
+            self._logger.warning(f"Failed to generate structured plan: {e}. Falling back to default plan.")
             return self._create_fallback_plan(task_description)
     
     def _create_fallback_plan(self, task_description: str) -> ExecutionPlan:

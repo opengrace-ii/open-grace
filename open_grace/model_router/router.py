@@ -10,11 +10,15 @@ The router decides which model to use based on:
 
 import os
 import json
-from typing import Dict, List, Optional, Any, Callable
+from typing import Dict, List, Optional, Any, Callable, Type, TypeVar
 from dataclasses import dataclass, asdict
 from datetime import datetime
 from pathlib import Path
 from enum import Enum
+
+from pydantic import BaseModel, ValidationError
+
+T = TypeVar('T', bound=BaseModel)
 
 from open_grace.model_router.clients import (
     BaseModelClient,
@@ -203,8 +207,30 @@ class ModelRouter:
         else:
             return "low"
     
-    async def _select_model(self, task: str, strategy: RoutingStrategy) -> tuple[ModelProvider, str]:
+    async def _select_model(self, task: str, strategy: RoutingStrategy, explicit_model: Optional[str] = None) -> tuple[ModelProvider, str]:
         """Select the best model for a task."""
+        # Check for explicit model override first
+        if explicit_model:
+            # Try to find which provider has this model
+            for provider, client in self._clients.items():
+                if await client.is_available():
+                    # For Ollama, the model name is dynamic
+                    if provider == ModelProvider.OLLAMA:
+                        # We trust the user knows if the model is in Ollama
+                        # or we could check client.list_models()
+                        return provider, explicit_model
+                    
+                    # For external providers, we usually check their specific model names
+                    # or if the client config matches exactly
+                    if client.config.model_name == explicit_model:
+                        return provider, explicit_model
+            
+            # Fallback handling for common aliases or substring matches
+            for provider, client in self._clients.items():
+                if await client.is_available():
+                    if explicit_model.lower() in client.config.model_name.lower():
+                        return provider, client.config.model_name
+
         complexity = self._analyze_complexity(task)
         
         # Check which providers are available
@@ -289,92 +315,149 @@ class ModelRouter:
         # Default fallback
         if ModelProvider.OLLAMA in available:
             return ModelProvider.OLLAMA, self.config["preferred_local"]
-        
         # Last resort: use any available
         provider = list(available.keys())[0]
         return provider, available[provider].config.model_name
     
-    async def generate(self, prompt: str, system: Optional[str] = None, strategy: Optional[RoutingStrategy] = None) -> ModelResponse:
-        """
-        Generate a response using the best available model.
- for the task.
-        
-        Args:
-            prompt: The prompt to send
-            system: Optional system message
-            strategy: Routing strategy (defaults to config)
-            
-        Returns:
-            ModelResponse with content and metadata
-        """
+    def _inject_schema(self, system: Optional[str], response_model: Optional[Type[BaseModel]]) -> Optional[str]:
+        if not response_model:
+            return system
+        schema_json = json.dumps(response_model.model_json_schema())
+        instruction = f"Respond ONLY with valid JSON matching the following schema:\n{schema_json}"
+        return f"{system}\n\n{instruction}" if system else instruction
+
+    def _parse_content(self, content: str, response_model: Type[BaseModel]) -> BaseModel:
+        content = content.strip()
+        if content.startswith("```json"):
+            content = content[7:-3].strip()
+        elif content.startswith("```"):
+            content = content[3:-3].strip()
+        return response_model.model_validate_json(content)
+
+    def _record_decision(self, task_hint: str, provider: ModelProvider, model: str, strategy: RoutingStrategy, response: ModelResponse, client: BaseModelClient):
+        decision = RoutingDecision(
+            task=str(task_hint)[:100] + "..." if len(str(task_hint)) > 100 else str(task_hint),
+            provider=provider,
+            model=model,
+            strategy=strategy,
+            reasoning=f"Complexity: {self._analyze_complexity(task_hint)}",
+            estimated_cost=client.estimate_cost(
+                response.usage.get("prompt_tokens", 0),
+                response.usage.get("completion_tokens", 0)
+            )
+        )
+        self._history.append(decision)
+
+    async def generate(
+        self, 
+        prompt: str, 
+        system: Optional[str] = None, 
+        strategy: Optional[RoutingStrategy] = None,
+        model: Optional[str] = None,
+        response_model: Optional[Type[BaseModel]] = None,
+        max_retries: int = 3
+    ) -> ModelResponse:
+        """Generate a response using the best available model."""
         strategy = strategy or RoutingStrategy(self.config.get("default_strategy", "hybrid"))
-        
-        # Select model
-        provider, model = await self._select_model(prompt, strategy)
-        
-        # Get client
+        provider, actual_model = await self._select_model(prompt, strategy, explicit_model=model)
         client = self._clients.get(provider)
         if not client:
             raise Exception(f"Selected provider {provider} not available")
         
-        # Generate
-        start_time = datetime.now()
-        try:
-            response = await client.generate(prompt, system)
-            
-            # Record decision
-            decision = RoutingDecision(
-                task=str(prompt)[:100] + "..." if len(str(prompt)) > 100 else str(prompt),
-                provider=provider,
-                model=model,
-                strategy=strategy,
-                reasoning=f"Complexity: {self._analyze_complexity(prompt)}",
-                estimated_cost=client.estimate_cost(
-                    response.usage.get("prompt_tokens", 0),
-                    response.usage.get("completion_tokens", 0)
-                )
-            )
-            self._history.append(decision)
-            
-            return response
-            
-        except Exception as e:
-            # Try fallback if enabled
-            if self.config.get("fallback_enabled", True):
-                for fallback_provider in [ModelProvider.OLLAMA, ModelProvider.DEEPSEEK]:
-                    if fallback_provider in self._clients and fallback_provider != provider:
-                        try:
-                            fallback_client = self._clients[fallback_provider]
-                            if await fallback_client.is_available():
-                                return await fallback_client.generate(prompt, system)
-                        except:
-                            continue
-            
-            raise e
-    
-    async def chat(self, messages: List[Dict[str, str]], strategy: Optional[RoutingStrategy] = None) -> ModelResponse:
-        """
-        Chat using the best available model.
- for the conversation.
+        system_with_schema = self._inject_schema(system, response_model)
+        current_prompt = prompt
         
-        Args:
-            messages: List of message dicts with 'role' and 'content'
-            strategy: Routing strategy
-            
-        Returns:
-            ModelResponse
-        """
-        # Use last message for complexity analysis
+        for attempt in range(max_retries):
+            try:
+                response = await client.generate(current_prompt, system_with_schema)
+                self._record_decision(prompt, provider, actual_model, strategy, response, client)
+                
+                if response_model:
+                    try:
+                        parsed = self._parse_content(response.content, response_model)
+                        response.content = parsed
+                        return response
+                    except ValidationError as e:
+                        if attempt == max_retries - 1:
+                            raise e
+                        current_prompt += f"\n\nValidation Failed. Error:\n{e}\nPlease correct the JSON output."
+                        continue
+                return response
+            except Exception as e:
+                # Simple fallback
+                if self.config.get("fallback_enabled", True) and not isinstance(e, ValidationError):
+                    for fallback_provider in [ModelProvider.OLLAMA, ModelProvider.DEEPSEEK]:
+                        if fallback_provider in self._clients and fallback_provider != provider:
+                            try:
+                                fallback_client = self._clients[fallback_provider]
+                                if await fallback_client.is_available():
+                                    response = await fallback_client.generate(current_prompt, system_with_schema)
+                                    if response_model:
+                                        parsed = self._parse_content(response.content, response_model)
+                                        response.content = parsed
+                                    return response
+                            except Exception:
+                                continue
+                raise e
+    
+    async def chat(
+        self, 
+        messages: List[Dict[str, str]], 
+        strategy: Optional[RoutingStrategy] = None,
+        model: Optional[str] = None,
+        response_model: Optional[Type[BaseModel]] = None,
+        max_retries: int = 3
+    ) -> ModelResponse:
+        """Chat using the best available model."""
         last_message = messages[-1]["content"] if messages else ""
         strategy = strategy or RoutingStrategy(self.config.get("default_strategy", "hybrid"))
-        
-        provider, model = await self._select_model(last_message, strategy)
+        provider, actual_model = await self._select_model(last_message, strategy, explicit_model=model)
         client = self._clients.get(provider)
-        
         if not client:
             raise Exception(f"Selected provider {provider} not available")
-        
-        return await client.chat(messages)
+            
+        current_messages = list(messages)
+        # Inject schema into the last system message or create one
+        if response_model:
+            schema_json = json.dumps(response_model.model_json_schema())
+            instruction = f"Respond ONLY with valid JSON matching the following schema:\n{schema_json}"
+            if current_messages and current_messages[0]["role"] == "system":
+                current_messages[0]["content"] += f"\n\n{instruction}"
+            else:
+                current_messages.insert(0, {"role": "system", "content": instruction})
+
+        for attempt in range(max_retries):
+            try:
+                response = await client.chat(current_messages)
+                self._record_decision(last_message, provider, actual_model, strategy, response, client)
+                
+                if response_model:
+                    try:
+                        parsed = self._parse_content(response.content, response_model)
+                        response.content = parsed
+                        return response
+                    except ValidationError as e:
+                        if attempt == max_retries - 1:
+                            raise e
+                        current_messages.append({"role": "assistant", "content": response.content})
+                        current_messages.append({"role": "user", "content": f"Validation Failed. Error:\n{e}\nPlease correct the JSON output."})
+                        continue
+                return response
+            except Exception as e:
+                if self.config.get("fallback_enabled", True) and not isinstance(e, ValidationError):
+                    for fallback_provider in [ModelProvider.OLLAMA, ModelProvider.DEEPSEEK]:
+                        if fallback_provider in self._clients and fallback_provider != provider:
+                            try:
+                                fallback_client = self._clients[fallback_provider]
+                                if await fallback_client.is_available():
+                                    response = await fallback_client.chat(current_messages)
+                                    if response_model:
+                                        parsed = self._parse_content(response.content, response_model)
+                                        response.content = parsed
+                                    return response
+                            except Exception:
+                                continue
+                raise e
     
     async def get_available_providers(self) -> List[ModelProvider]:
         """Get list of available providers."""

@@ -31,17 +31,22 @@ class StructuredLogFormatter(logging.Formatter):
             "line": record.lineno,
         }
         
-        # Add extra fields
-        if hasattr(record, "context"):
-            log_data["context"] = record.context
-        if hasattr(record, "agent_id"):
-            log_data["agent_id"] = record.agent_id
-        if hasattr(record, "task_id"):
-            log_data["task_id"] = record.task_id
+        # Add extra fields safely
+        context = getattr(record, "context", None)
+        if context is not None:
+            log_data["context"] = context
+            
+        agent_id = getattr(record, "agent_id", None)
+        if agent_id is not None:
+            log_data["agent_id"] = agent_id
+            
+        task_id = getattr(record, "task_id", None)
+        if task_id is not None:
+            log_data["task_id"] = task_id
         
         # Add exception info
         if record.exc_info:
-            log_data["exception"] = self.formatException(record.exc_info)
+            log_data["exception"] = self.formatException(record.exc_info)  # type: ignore
         
         return json.dumps(log_data)
 
@@ -111,7 +116,27 @@ class GraceLogger:
         error_handler.setLevel(logging.ERROR)
         error_handler.setFormatter(formatter)
         self._logger.addHandler(error_handler)
+
+        # Activity log (human readable audit trail)
+        self._activity_logger = logging.getLogger(f"{name}_activity")
+        self._activity_logger.setLevel(logging.INFO)
+        self._activity_logger.handlers = []
+        activity_file = self.log_dir / "activity.log"
+        activity_handler = RotatingFileHandler(
+            activity_file,
+            maxBytes=20 * 1024 * 1024,
+            backupCount=10
+        )
+        activity_formatter = logging.Formatter(
+            "%(asctime)s | [%(levelname)s] | %(message)s"
+        )
+        activity_handler.setFormatter(activity_formatter)
+        self._activity_logger.addHandler(activity_handler)
     
+    def log_activity(self, message: str, level: str = "INFO"):
+        """Log a high-level activity for the audit trail."""
+        lvl = getattr(logging, level.upper(), logging.INFO)
+        self._activity_logger.log(lvl, message)
     def debug(self, message: str, extra: Optional[Dict[str, Any]] = None):
         """Log debug message."""
         self._logger.debug(message, extra=extra or {})

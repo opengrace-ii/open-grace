@@ -1,17 +1,26 @@
 // Use environment variable or detect if running on mobile
+// Use environment variable or detect if running on mobile
 const getApiUrl = () => {
   const envUrl = import.meta.env.VITE_API_URL
   if (envUrl) return envUrl
   
+  // Dynamic host detection
+  const host = typeof window !== 'undefined' ? window.location.hostname : 'localhost'
+  const protocol = typeof window !== 'undefined' && window.location.protocol === 'https:' ? 'https:' : 'http:'
+  
+  if (host !== 'localhost' && host !== '127.0.0.1') {
+    return `${protocol}//${host}:8000`
+  }
+  
   // If accessing from mobile device, use network IP
-  if (/Mobi|Android/i.test(navigator.userAgent)) {
+  if (typeof navigator !== 'undefined' && /Mobi|Android/i.test(navigator.userAgent)) {
     return 'http://192.168.0.165:8000'
   }
   
   return 'http://localhost:8000'
 }
 
-const API_BASE_URL = getApiUrl()
+export const API_BASE_URL = getApiUrl()
 
 export class APIClient {
   private static token: string | null = null
@@ -106,5 +115,17 @@ export class APIClient {
 
   static async terminateSession(sessionId: string) {
     return this.request(`/auth/sessions/${sessionId}`, { method: 'DELETE' })
+  }
+
+  // Observability
+  static async logActivity(event: string, category: string = 'UI', details?: string) {
+    try {
+      await this.request('/observability/activity', {
+        method: 'POST',
+        body: JSON.stringify({ event, category, details })
+      })
+    } catch {
+      // Silently fail - don't break the UI for logging
+    }
   }
 }
