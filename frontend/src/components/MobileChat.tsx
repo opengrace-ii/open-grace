@@ -59,7 +59,10 @@ export function MobileChat() {
   const [input, setInput] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [isRecording, setIsRecording] = useState(false)
-  const [activeView, setActiveView] = useState<'chat' | 'tasks'>('chat')
+  const [activeView, setActiveView] = useState<'chat' | 'tasks'>(() => {
+    const path = window.location.pathname.substring(1)
+    return path === 'tasks' ? 'tasks' : 'chat'
+  })
   
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
@@ -356,14 +359,20 @@ export function MobileChat() {
       <nav className="mobile-nav">
         <button 
           className={`nav-item ${activeView === 'chat' ? 'active' : ''}`}
-          onClick={() => setActiveView('chat')}
+          onClick={() => {
+            setActiveView('chat')
+            window.history.pushState(null, '', '/')
+          }}
         >
           <MessageSquare size={20} />
           <span>Chat</span>
         </button>
         <button 
           className={`nav-item ${activeView === 'tasks' ? 'active' : ''}`}
-          onClick={() => setActiveView('tasks')}
+          onClick={() => {
+            setActiveView('tasks')
+            window.history.pushState(null, '', '/tasks')
+          }}
         >
           <ListTodo size={20} />
           <span>Tasks</span>

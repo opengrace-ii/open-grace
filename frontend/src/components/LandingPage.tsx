@@ -29,9 +29,35 @@ export function LandingPage() {
   const installCommand = 'git clone https://github.com/opengrace-ii/open-grace && cd open-grace && pip install -e .'
 
   const handleCopy = () => {
-    navigator.clipboard.writeText(installCommand)
-    setCopied(true)
-    setTimeout(() => setCopied(false), 2000)
+    if (navigator.clipboard && window.isSecureContext) {
+      navigator.clipboard.writeText(installCommand).then(() => {
+        setCopied(true)
+        setTimeout(() => setCopied(false), 2000)
+      }).catch(() => {
+        copyFallback(installCommand)
+      })
+    } else {
+      copyFallback(installCommand)
+    }
+
+    function copyFallback(text: string) {
+      const textArea = document.createElement("textarea")
+      textArea.value = text
+      textArea.style.position = "fixed"
+      textArea.style.left = "-9999px"
+      textArea.style.top = "0"
+      document.body.appendChild(textArea)
+      textArea.focus()
+      textArea.select()
+      try {
+        document.execCommand('copy')
+        setCopied(true)
+        setTimeout(() => setCopied(false), 2000)
+      } catch (err) {
+        console.error('Fallback copy failed', err)
+      }
+      document.body.removeChild(textArea)
+    }
   }
 
   const pillars = [

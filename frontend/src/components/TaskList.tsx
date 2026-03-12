@@ -254,8 +254,38 @@ export function TaskList({ refreshTrigger }: TaskListProps) {
                     }
                     
                     const shareText = `*Question:* ${selectedTask.description}\n\n*Response:* ${content}\n\n---\n*Open Grace TaskForge AI* | Task #${selectedTask.id_numeric}\n_Intelligence Unleashed_`;
-                    navigator.clipboard.writeText(shareText);
-                    alert("Response copied to clipboard with branding!");
+                    
+                    if (navigator.clipboard && window.isSecureContext) {
+                        navigator.clipboard.writeText(shareText).then(() => {
+                            alert("Response copied to clipboard!");
+                        }).catch(() => {
+                            // Fallback to manual copy if clipboard API fails
+                            const textArea = document.createElement("textarea");
+                            textArea.value = shareText;
+                            document.body.appendChild(textArea);
+                            textArea.select();
+                            try {
+                                document.execCommand('copy');
+                                alert("Response copied to clipboard (fallback)!");
+                            } catch (err) {
+                                alert("Failed to copy. Please select the text manually.");
+                            }
+                            document.body.removeChild(textArea);
+                        });
+                    } else {
+                        // Fallback for non-secure contexts (HTTP)
+                        const textArea = document.createElement("textarea");
+                        textArea.value = shareText;
+                        document.body.appendChild(textArea);
+                        textArea.select();
+                        try {
+                            document.execCommand('copy');
+                            alert("Response copied to clipboard!");
+                        } catch (err) {
+                            alert("Failed to copy. Please select the text manually.");
+                        }
+                        document.body.removeChild(textArea);
+                    }
                   }}
                   title="Copy for WhatsApp / Sharing"
                 >
