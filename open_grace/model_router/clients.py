@@ -16,7 +16,8 @@ from abc import ABC, abstractmethod
 from typing import Dict, List, Optional, Any, Iterator, Union
 from dataclasses import dataclass
 from enum import Enum
-import requests
+import httpx
+import asyncio
 
 
 class ModelProvider(Enum):
@@ -54,32 +55,38 @@ class ModelConfig:
     cost_per_1k_output: float = 0.0
 
 
+
+
 class BaseModelClient(ABC):
     """Abstract base class for model clients."""
     
     def __init__(self, config: ModelConfig):
         self.config = config
-        self._session = requests.Session()
+        self._client = httpx.AsyncClient(timeout=config.timeout)
+    
+    async def close(self):
+        """Close the underlying HTTP client."""
+        await self._client.aclose()
     
     @abstractmethod
-    def generate(self, prompt: str, system: Optional[str] = None) -> ModelResponse:
+    async def generate(self, prompt: str, system: Optional[str] = None) -> ModelResponse:
         """Generate a response from the model."""
-        pass
+        raise NotImplementedError()
     
     @abstractmethod
-    def chat(self, messages: List[Dict[str, str]]) -> ModelResponse:
+    async def chat(self, messages: List[Dict[str, str]]) -> ModelResponse:
         """Chat with the model."""
-        pass
+        raise NotImplementedError()
     
     @abstractmethod
-    def is_available(self) -> bool:
+    async def is_available(self) -> bool:
         """Check if the model is available."""
-        pass
+        raise NotImplementedError()
     
     @abstractmethod
-    def list_models(self) -> List[str]:
+    async def list_models(self) -> List[str]:
         """List available models from this provider."""
-        pass
+        raise NotImplementedError()
     
     def estimate_cost(self, input_tokens: int, output_tokens: int) -> float:
         """Estimate the cost of a request."""
@@ -104,7 +111,7 @@ class OllamaClient(BaseModelClient):
         super().__init__(config)
         self.base_url = base_url.rstrip("/")
     
-    def generate(self, prompt: str, system: Optional[str] = None) -> ModelResponse:
+    async def generate(self, prompt: str, system: Optional[str] = None) -> ModelResponse:
         """Generate using Ollama's generate endpoint."""
         url = f"{self.base_url}/api/generate"
         
@@ -122,11 +129,7 @@ class OllamaClient(BaseModelClient):
         
         start_time = time.time()
         try:
-            response = self._session.post(
-                url, 
-                json=payload, 
-                timeout=self.config.timeout
-            )
+            response = await self._client.post(url, json=payload)
             response.raise_for_status()
             data = response.json()
             latency = (time.time() - start_time) * 1000
@@ -139,12 +142,12 @@ class OllamaClient(BaseModelClient):
                 latency_ms=latency,
                 metadata={"done": data.get("done", False)}
             )
-        except requests.exceptions.ConnectionError:
+        except httpx.ConnectError:
             raise ConnectionError(f"Could not connect to Ollama at {self.base_url}")
         except Exception as e:
             raise Exception(f"Ollama API error: {str(e)}")
     
-    def chat(self, messages: List[Dict[str, str]]) -> ModelResponse:
+    async def chat(self, messages: List[Dict[str, str]]) -> ModelResponse:
         """Chat using Ollama's chat endpoint."""
         url = f"{self.base_url}/api/chat"
         
@@ -159,11 +162,7 @@ class OllamaClient(BaseModelClient):
         
         start_time = time.time()
         try:
-            response = self._session.post(
-                url, 
-                json=payload, 
-                timeout=self.config.timeout
-            )
+            response = await self._client.post(url, json=payload)
             response.raise_for_status()
             data = response.json()
             latency = (time.time() - start_time) * 1000
@@ -177,29 +176,23 @@ class OllamaClient(BaseModelClient):
                 latency_ms=latency,
                 metadata={"done": data.get("done", False)}
             )
-        except requests.exceptions.ConnectionError:
+        except httpx.ConnectError:
             raise ConnectionError(f"Could not connect to Ollama at {self.base_url}")
         except Exception as e:
             raise Exception(f"Ollama API error: {str(e)}")
     
-    def is_available(self) -> bool:
+    async def is_available(self) -> bool:
         """Check if Ollama is running."""
         try:
-            response = self._session.get(
-                f"{self.base_url}/api/tags", 
-                timeout=5
-            )
+            response = await self._client.get(f"{self.base_url}/api/tags", timeout=5)
             return response.status_code == 200
         except:
             return False
     
-    def list_models(self) -> List[str]:
+    async def list_models(self) -> List[str]:
         """List available Ollama models."""
         try:
-            response = self._session.get(
-                f"{self.base_url}/api/tags",
-                timeout=10
-            )
+            response = await self._client.get(f"{self.base_url}/api/tags", timeout=10)
             response.raise_for_status()
             models = response.json().get("models", [])
             return [m["name"] for m in models]
@@ -229,16 +222,25 @@ class OpenAIClient(BaseModelClient):
             cost_per_1k_output=output_cost
         )
         super().__init__(config)
-    def generate(self, prompt: str, system: Optional[str] = None) -> ModelResponse:
+        self.api_key = api_key or os.environ.get("OPENAI_API_KEY")
+        self.base_url = "https://api.openai.com/v1"
+    
+    def _headers(self) -> Dict[str, str]:
+        return {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json"
+        }
+    
+    async def generate(self, prompt: str, system: Optional[str] = None) -> ModelResponse:
         """Generate using OpenAI's completions API."""
         messages = []
         if system:
             messages.append({"role": "system", "content": system})
         messages.append({"role": "user", "content": prompt})
         
-        return self.chat(messages)
+        return await self.chat(messages)
     
-    def chat(self, messages: List[Dict[str, str]]) -> ModelResponse:
+    async def chat(self, messages: List[Dict[str, str]]) -> ModelResponse:
         """Chat using OpenAI's chat completions API."""
         url = f"{self.base_url}/chat/completions"
         
@@ -254,11 +256,10 @@ class OpenAIClient(BaseModelClient):
         
         start_time = time.time()
         try:
-            response = self._session.post(
+            response = await self._client.post(
                 url,
                 headers=self._headers(),
-                json=payload,
-                timeout=self.config.timeout
+                json=payload
             )
             response.raise_for_status()
             data = response.json()
@@ -282,27 +283,25 @@ class OpenAIClient(BaseModelClient):
         except Exception as e:
             raise Exception(f"OpenAI API error: {str(e)}")
     
-    def is_available(self) -> bool:
+    async def is_available(self) -> bool:
         """Check if OpenAI API is accessible."""
         if not self.api_key:
             return False
         try:
-            response = self._session.get(
+            response = await self._client.get(
                 f"{self.base_url}/models",
-                headers=self._headers(),
-                timeout=10
+                headers=self._headers()
             )
             return response.status_code == 200
         except:
             return False
     
-    def list_models(self) -> List[str]:
+    async def list_models(self) -> List[str]:
         """List available OpenAI models."""
         try:
-            response = self._session.get(
+            response = await self._client.get(
                 f"{self.base_url}/models",
-                headers=self._headers(),
-                timeout=10
+                headers=self._headers()
             )
             response.raise_for_status()
             models = response.json().get("data", [])
@@ -342,16 +341,16 @@ class AnthropicClient(BaseModelClient):
             "anthropic-version": "2023-06-01"
         }
     
-    def generate(self, prompt: str, system: Optional[str] = None) -> ModelResponse:
+    async def generate(self, prompt: str, system: Optional[str] = None) -> ModelResponse:
         """Generate using Anthropic's messages API."""
         messages = [{"role": "user", "content": prompt}]
-        return self._chat(messages, system)
+        return await self._chat(messages, system)
     
-    def chat(self, messages: List[Dict[str, str]]) -> ModelResponse:
+    async def chat(self, messages: List[Dict[str, str]]) -> ModelResponse:
         """Chat using Anthropic's messages API."""
-        return self._chat(messages)
+        return await self._chat(messages)
     
-    def _chat(self, messages: List[Dict[str, str]], system: Optional[str] = None) -> ModelResponse:
+    async def _chat(self, messages: List[Dict[str, str]], system: Optional[str] = None) -> ModelResponse:
         url = f"{self.base_url}/messages"
         payload = {
             "model": self.config.model_name,
@@ -364,11 +363,10 @@ class AnthropicClient(BaseModelClient):
         
         start_time = time.time()
         try:
-            response = self._session.post(
+            response = await self._client.post(
                 url,
                 headers=self._headers(),
-                json=payload,
-                timeout=self.config.timeout
+                json=payload
             )
             response.raise_for_status()
             data = response.json()
@@ -390,10 +388,10 @@ class AnthropicClient(BaseModelClient):
         except Exception as e:
             raise Exception(f"Anthropic API error: {str(e)}")
     
-    def is_available(self) -> bool:
+    async def is_available(self) -> bool:
         return bool(self.api_key)
     
-    def list_models(self) -> List[str]:
+    async def list_models(self) -> List[str]:
         return [
             "claude-3-opus-20240229",
             "claude-3-sonnet-20240229",
@@ -408,7 +406,7 @@ class GeminiClient(BaseModelClient):
     DEFAULT_MODEL = "gemini-1.5-flash-latest"
     
     def __init__(self, api_key: Optional[str] = None,
-                 model: str = None,
+                 model: Optional[str] = None,
                  temperature: float = 0.7):
         if model is None:
             model = self.DEFAULT_MODEL
@@ -423,7 +421,7 @@ class GeminiClient(BaseModelClient):
         self.api_key = api_key or os.environ.get("GEMINI_API_KEY")
         self.base_url = "https://generativelanguage.googleapis.com/v1beta"
     
-    def generate(self, prompt: str, system: Optional[str] = None) -> ModelResponse:
+    async def generate(self, prompt: str, system: Optional[str] = None) -> ModelResponse:
         """Generate using Gemini API."""
         url = f"{self.base_url}/models/{self.config.model_name}:generateContent?key={self.api_key}"
         payload = {
@@ -435,7 +433,7 @@ class GeminiClient(BaseModelClient):
         
         start_time = time.time()
         try:
-            response = self._session.post(url, json=payload, timeout=self.config.timeout)
+            response = await self._client.post(url, json=payload)
             response.raise_for_status()
             data = response.json()
             latency = (time.time() - start_time) * 1000
@@ -452,7 +450,7 @@ class GeminiClient(BaseModelClient):
         except Exception as e:
             raise Exception(f"Gemini API error: {str(e)}")
     
-    def chat(self, messages: List[Dict[str, str]]) -> ModelResponse:
+    async def chat(self, messages: List[Dict[str, str]]) -> ModelResponse:
         """Chat using Gemini API."""
         contents = []
         for msg in messages:
@@ -466,7 +464,7 @@ class GeminiClient(BaseModelClient):
         }
         start_time = time.time()
         try:
-            response = self._session.post(url, json=payload, timeout=self.config.timeout)
+            response = await self._client.post(url, json=payload)
             response.raise_for_status()
             data = response.json()
             latency = (time.time() - start_time) * 1000
@@ -483,10 +481,10 @@ class GeminiClient(BaseModelClient):
         except Exception as e:
             raise Exception(f"Gemini API error: {str(e)}")
     
-    def is_available(self) -> bool:
+    async def is_available(self) -> bool:
         return bool(self.api_key)
     
-    def list_models(self) -> List[str]:
+    async def list_models(self) -> List[str]:
         return ["gemini-pro", "gemini-pro-vision"]
 
 
@@ -513,15 +511,15 @@ class DeepSeekClient(BaseModelClient):
             "Content-Type": "application/json"
         }
     
-    def generate(self, prompt: str, system: Optional[str] = None) -> ModelResponse:
+    async def generate(self, prompt: str, system: Optional[str] = None) -> ModelResponse:
         """Generate using DeepSeek API."""
         messages = []
         if system:
             messages.append({"role": "system", "content": system})
         messages.append({"role": "user", "content": prompt})
-        return self.chat(messages)
+        return await self.chat(messages)
     
-    def chat(self, messages: List[Dict[str, str]]) -> ModelResponse:
+    async def chat(self, messages: List[Dict[str, str]]) -> ModelResponse:
         """Chat using DeepSeek API."""
         url = f"{self.base_url}/chat/completions"
         payload = {
@@ -535,11 +533,10 @@ class DeepSeekClient(BaseModelClient):
         
         start_time = time.time()
         try:
-            response = self._session.post(
+            response = await self._client.post(
                 url,
                 headers=self._headers(),
-                json=payload,
-                timeout=self.config.timeout
+                json=payload
             )
             response.raise_for_status()
             data = response.json()
@@ -561,8 +558,8 @@ class DeepSeekClient(BaseModelClient):
         except Exception as e:
             raise Exception(f"DeepSeek API error: {str(e)}")
     
-    def is_available(self) -> bool:
+    async def is_available(self) -> bool:
         return bool(self.api_key)
     
-    def list_models(self) -> List[str]:
+    async def list_models(self) -> List[str]:
         return ["deepseek-chat", "deepseek-coder"]

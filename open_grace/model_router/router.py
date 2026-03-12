@@ -203,12 +203,15 @@ class ModelRouter:
         else:
             return "low"
     
-    def _select_model(self, task: str, strategy: RoutingStrategy) -> tuple[ModelProvider, str]:
+    async def _select_model(self, task: str, strategy: RoutingStrategy) -> tuple[ModelProvider, str]:
         """Select the best model for a task."""
         complexity = self._analyze_complexity(task)
         
         # Check which providers are available
-        available = {p: c for p, c in self._clients.items() if c.is_available()}
+        available = {}
+        for p, c in self._clients.items():
+            if await c.is_available():
+                available[p] = c
         
         if not available:
             raise Exception("No model providers available")
@@ -291,11 +294,10 @@ class ModelRouter:
         provider = list(available.keys())[0]
         return provider, available[provider].config.model_name
     
-    def generate(self, prompt: str, 
-                 system: Optional[str] = None,
-                 strategy: Optional[RoutingStrategy] = None) -> ModelResponse:
+    async def generate(self, prompt: str, system: Optional[str] = None, strategy: Optional[RoutingStrategy] = None) -> ModelResponse:
         """
-        Generate a response using the best model for the task.
+        Generate a response using the best available model.
+ for the task.
         
         Args:
             prompt: The prompt to send
@@ -308,7 +310,7 @@ class ModelRouter:
         strategy = strategy or RoutingStrategy(self.config.get("default_strategy", "hybrid"))
         
         # Select model
-        provider, model = self._select_model(prompt, strategy)
+        provider, model = await self._select_model(prompt, strategy)
         
         # Get client
         client = self._clients.get(provider)
@@ -318,11 +320,11 @@ class ModelRouter:
         # Generate
         start_time = datetime.now()
         try:
-            response = client.generate(prompt, system)
+            response = await client.generate(prompt, system)
             
             # Record decision
             decision = RoutingDecision(
-                task=prompt[:100] + "..." if len(prompt) > 100 else prompt,
+                task=str(prompt)[:100] + "..." if len(str(prompt)) > 100 else str(prompt),
                 provider=provider,
                 model=model,
                 strategy=strategy,
@@ -343,17 +345,17 @@ class ModelRouter:
                     if fallback_provider in self._clients and fallback_provider != provider:
                         try:
                             fallback_client = self._clients[fallback_provider]
-                            if fallback_client.is_available():
-                                return fallback_client.generate(prompt, system)
+                            if await fallback_client.is_available():
+                                return await fallback_client.generate(prompt, system)
                         except:
                             continue
             
             raise e
     
-    def chat(self, messages: List[Dict[str, str]],
-             strategy: Optional[RoutingStrategy] = None) -> ModelResponse:
+    async def chat(self, messages: List[Dict[str, str]], strategy: Optional[RoutingStrategy] = None) -> ModelResponse:
         """
-        Chat using the best model for the conversation.
+        Chat using the best available model.
+ for the conversation.
         
         Args:
             messages: List of message dicts with 'role' and 'content'
@@ -366,24 +368,28 @@ class ModelRouter:
         last_message = messages[-1]["content"] if messages else ""
         strategy = strategy or RoutingStrategy(self.config.get("default_strategy", "hybrid"))
         
-        provider, model = self._select_model(last_message, strategy)
+        provider, model = await self._select_model(last_message, strategy)
         client = self._clients.get(provider)
         
         if not client:
             raise Exception(f"Selected provider {provider} not available")
         
-        return client.chat(messages)
+        return await client.chat(messages)
     
-    def get_available_providers(self) -> List[ModelProvider]:
+    async def get_available_providers(self) -> List[ModelProvider]:
         """Get list of available providers."""
-        return [p for p, c in self._clients.items() if c.is_available()]
+        available = []
+        for p, c in self._clients.items():
+            if await c.is_available():
+                available.append(p)
+        return available
     
-    def get_provider_status(self) -> Dict[str, Dict[str, Any]]:
+    async def get_provider_status(self) -> Dict[str, Dict[str, Any]]:
         """Get status of all providers."""
         status = {}
         for provider, client in self._clients.items():
             status[provider.value] = {
-                "available": client.is_available(),
+                "available": await client.is_available(),
                 "model": client.config.model_name,
                 "cost_per_1k_input": client.config.cost_per_1k_input,
                 "cost_per_1k_output": client.config.cost_per_1k_output
@@ -399,7 +405,7 @@ class ModelRouter:
         self.config["default_strategy"] = strategy.value
         self._save_config()
     
-    def add_api_key(self, provider: ModelProvider, api_key: str):
+    async def add_api_key(self, provider: ModelProvider, api_key: str):
         """Add an API key for a provider."""
         key_name = f"{provider.value}_api_key"
         self.vault.set_secret(key_name, api_key, category="api_key", 

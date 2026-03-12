@@ -150,11 +150,12 @@ class BaseAgent(ABC):
     async def stop(self):
         """Stop the agent."""
         self._running = False
-        if self._worker_task:
-            self._worker_task.cancel()
+        worker_task = getattr(self, "_worker_task", None)
+        if worker_task:
+            worker_task.cancel()
             try:
-                await self._worker_task
-            except asyncio.CancelledError:
+                await worker_task
+            except (asyncio.CancelledError, Exception):
                 pass
         
         self.logger.info(f"Agent {self.name} ({self.agent_id}) stopped")
@@ -257,6 +258,26 @@ class BaseAgent(ABC):
             "current_task": self._current_task.id if self._current_task else None
         }
     
+    async def execute(self, task_description: str, context: Optional[Dict[str, Any]] = None) -> Any:
+        """
+        Convenience method to execute a task from a description.
+        
+        Args:
+            task_description: The task description
+            context: Additional context
+            
+        Returns:
+            Execution result
+        """
+        task_id = f"task_{uuid.uuid4().hex[:8]}"
+        task = AgentTask(
+            id=task_id,
+            description=task_description,
+            context=context or {},
+            priority=5
+        )
+        return await self.process_task(task)
+
     async def think(self, prompt: str, system: Optional[str] = None) -> str:
         """
         Use the LLM to think about something.
@@ -271,8 +292,10 @@ class BaseAgent(ABC):
         self.state = AgentState.THINKING
         
         try:
-            response = self.model_router.generate(prompt, system=system)
-            return response.content
+            response = await self.model_router.generate(prompt, system=system)
+            if response and hasattr(response, "content"):
+                return str(response.content)
+            return ""
         finally:
             self.state = AgentState.IDLE
     

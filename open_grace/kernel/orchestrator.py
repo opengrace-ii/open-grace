@@ -44,18 +44,16 @@ class AgentStatus(Enum):
 @dataclass
 class Task:
     """A task to be executed."""
-   id: str
-   description: str
-   status: TaskStatus
+    id: str
+    description: str
+    status: TaskStatus
     agent_type: Optional[str]
     created_at: datetime
-   started_at: Optional[datetime] = None
+    started_at: Optional[datetime] = None
     completed_at: Optional[datetime] = None
-   result: Any = None
+    result: Any = None
     error: Optional[str] = None
-   metadata: Dict[str, Any] = field(default_factory=dict)
-   model: Optional[str] = None
-    tokens_used: Optional[int] = None
+    metadata: Dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -86,15 +84,18 @@ class GraceOrchestrator:
         result = await orchestrator.get_task_result(task_id)
     """
     
-    def __init__(self, config_path: Optional[str] = None):
+    def __init__(self, config_path: Optional[str] = None, instance_id: Optional[str] = None):
         """
         Initialize the orchestrator.
         
         Args:
             config_path: Path to orchestrator configuration
         """
-        self.config_path = config_path or Path.home() / ".open_grace" / "config.yaml"
-        self.instance_id = str(uuid.uuid4())[:8]
+        self.config_path = config_path or Path.home() / ".open_grace"
+        if not instance_id:
+            self.instance_id = f"grace-{Path.home().name}-{uuid.uuid4().hex[:4]}"
+        else:
+            self.instance_id = instance_id
         
         # Core components
         self.router: Optional[ModelRouter] = None
@@ -113,7 +114,10 @@ class GraceOrchestrator:
         # State
         self._initialized = False
         self._shutdown = False
-        self._worker_task: Optional[asyncio.Task] = None
+        self._worker_task: Optional[asyncio.Task[None]] = None
+        
+        # Initialize logger early to avoid NoneType access
+        self.logger = GraceLogger()
         
         # Event handlers
         self._event_handlers: Dict[str, List[Callable]] = {}
@@ -123,13 +127,15 @@ class GraceOrchestrator:
         if self._initialized:
             return
         
-        # Initialize logger first
-        self.logger = GraceLogger()
+        # Initialize logger (already initialized in __init__, but ensuring it exists)
+        if not self.logger:
+            self.logger = GraceLogger()
         self.logger.info(f"Initializing Grace Orchestrator (instance: {self.instance_id})")
         
         # Initialize vault
         self.vault = get_vault()
-        self.logger.info("Vault initialized")
+        if self.logger:
+            self.logger.info("Vault initialized")
         
         # Initialize model router
         self.router = get_router()
@@ -154,12 +160,14 @@ class GraceOrchestrator:
         self._shutdown = True
         
         # Cancel worker task
-        if self._worker_task:
-            self._worker_task.cancel()
+        worker = self._worker_task
+        if worker is not None and not worker.done():
+            worker.cancel()
             try:
-                await self._worker_task
-            except asyncio.CancelledError:
+                await worker
+            except (asyncio.CancelledError, Exception):
                 pass
+        self._worker_task = None
         
         # Shutdown all agents
         for agent_id in list(self._agents.keys()):
@@ -197,7 +205,9 @@ class GraceOrchestrator:
         self._agents[agent_id] = agent_info
         self._agent_instances[agent_id] = agent_instance
         
-        self.logger.info(f"Agent registered: {name} ({agent_id})")
+        if self.logger:
+            self.logger.info(f"Agent registered: {name} ({agent_id})")
+        
         await self._emit_event("agent.registered", {
             "agent_id": agent_id,
             "agent_type": agent_type,
@@ -303,9 +313,9 @@ class GraceOrchestrator:
             if task.status == TaskStatus.FAILED:
                 raise Exception(task.error or "Task failed")
             
-            if timeout:
+            if timeout is not None:
                 elapsed = (datetime.now() - start_time).total_seconds()
-                if elapsed > timeout:
+                if elapsed > float(timeout):
                     return None
             
             await asyncio.sleep(0.1)
@@ -320,7 +330,8 @@ class GraceOrchestrator:
             task.status = TaskStatus.CANCELLED
             task.completed_at = datetime.now()
             
-            self.logger.info(f"Task cancelled: {task_id}")
+            if self.logger:
+                self.logger.info(f"Task cancelled: {task_id}")
             await self._emit_event("task.cancelled", {"task_id": task_id})
             return True
         
@@ -382,28 +393,49 @@ class GraceOrchestrator:
                 self.logger.error(f"Event handler error: {e}")
     
     async def _task_worker(self):
-        """Background worker to process tasks."""
+        """Background worker to process tasks concurrently."""
+        # max_concurrent_tasks from vault or default
+        max_concurrent_tasks = 10
+        if self.vault and hasattr(self.vault, "get_secret"):
+            try:
+                max_tasks = self.vault.get_secret("max_concurrent_tasks")
+                if max_tasks:
+                    max_concurrent_tasks = int(max_tasks)
+            except (ValueError, TypeError):
+                pass
+        
+        semaphore = asyncio.Semaphore(max_concurrent_tasks)
+        
+        async def _run_task(task_obj):
+            async with semaphore:
+                try:
+                    await self._execute_task(task_obj)
+                except Exception as e:
+                    self.logger.error(f"Error executing task {task_obj.id}: {e}")
+
         while not self._shutdown:
             try:
                 # Get next task
-                priority, task_id = await asyncio.wait_for(
-                    self._task_queue.get(), 
-                    timeout=1.0
-                )
-                
+                try:
+                    priority, task_id = await asyncio.wait_for(
+                        self._task_queue.get(), 
+                        timeout=1.0
+                    )
+                except asyncio.TimeoutError:
+                    continue
+
                 task = self._tasks.get(task_id)
                 if not task or task.status != TaskStatus.PENDING:
                     continue
                 
-                # Execute task
-                await self._execute_task(task)
+                # Execute task concurrently
+                asyncio.create_task(_run_task(task))
                 
-            except asyncio.TimeoutError:
-                continue
             except asyncio.CancelledError:
                 break
             except Exception as e:
-                self.logger.error(f"Task worker error: {e}")
+                if self.logger:
+                    self.logger.error(f"Task worker error: {e}")
     
     async def _execute_task(self, task: Task):
         """Execute a single task."""
@@ -419,35 +451,27 @@ class GraceOrchestrator:
             
             if not agent_id:
                 # Use model router directly if no agent available
-               response = self.router.generate(
+                response = await self.router.generate(
                     task.description,
-                   strategy=RoutingStrategy.HYBRID
+                    strategy=RoutingStrategy.HYBRID
                 )
                 task.result = {
                     "content": response.content,
                     "provider": response.provider.value,
                     "model": response.model
                 }
-                # Capture model and tokens info
-                task.model = response.model
-                task.tokens_used = getattr(response, 'tokens_used', None)
             else:
                 # Execute via agent
                 agent_instance = self._agent_instances.get(agent_id)
                 if agent_instance:
-                   result = await agent_instance.execute(task.description)
+                    result = await agent_instance.execute(task.description)
                     task.result = result
-                    
-                    # Extract model and tokens from result if available
-                    if isinstance(result, dict):
-                        task.model= result.get('model') or result.get('response', {}).get('model')
-                        task.tokens_used = result.get('tokens_used') or result.get('response', {}).get('tokens_used')
                     
                     # Update agent stats
                     agent_info = self._agents[agent_id]
                     agent_info.task_count += 1
                     agent_info.last_active = datetime.now()
-
+            
             task.status = TaskStatus.COMPLETED
             self.logger.info(f"Task completed: {task.id}")
             await self._emit_event("task.completed", {
@@ -467,18 +491,38 @@ class GraceOrchestrator:
         finally:
             task.completed_at = datetime.now()
     
-    async def _select_agent(self, agent_type: Optional[str]) -> Optional[str]:
+    async def _select_agent(self, agent_type: Optional[str], task_description: Optional[str] = None) -> Optional[str]:
         """Select the best agent for a task."""
         available_agents = [
             (aid, info) for aid, info in self._agents.items()
             if info.status == AgentStatus.IDLE
-            and (not agent_type or info.agent_type == agent_type)
         ]
         
         if not available_agents:
             return None
-        
-        # Simple selection: pick the one with fewest tasks
+            
+        if agent_type:
+            # Filter by explicit type request
+            type_matched = [(aid, info) for aid, info in available_agents if info.agent_type == agent_type]
+            if type_matched:
+                return min(type_matched, key=lambda x: x[1].task_count)[0]
+            return None
+            
+        # If no type specified but we have a description, try a basic capability match
+        if task_description:
+            desc_lower = task_description.lower()
+            # Simple keyword matching for routing
+            if any(keyword in desc_lower for keyword in ["code", "script", "python", "bug", "refactor"]):
+                best_match = [(aid, info) for aid, info in available_agents if info.agent_type == "coder"]
+                if best_match: return min(best_match, key=lambda x: x[1].task_count)[0]
+            elif any(keyword in desc_lower for keyword in ["docker", "deploy", "server", "system", "bash"]):
+                best_match = [(aid, info) for aid, info in available_agents if info.agent_type == "sysadmin"]
+                if best_match: return min(best_match, key=lambda x: x[1].task_count)[0]
+            elif any(keyword in desc_lower for keyword in ["research", "search", "find", "summarize"]):
+                best_match = [(aid, info) for aid, info in available_agents if info.agent_type == "researcher"]
+                if best_match: return min(best_match, key=lambda x: x[1].task_count)[0]
+
+        # Fallback: simple selection, pick the one with fewest tasks
         return min(available_agents, key=lambda x: x[1].task_count)[0]
 
 

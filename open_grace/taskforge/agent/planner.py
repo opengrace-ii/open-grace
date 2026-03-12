@@ -8,7 +8,7 @@ import os
 import re
 from typing import List, Dict, Any, Optional
 from dataclasses import dataclass, asdict
-import requests
+import httpx
 
 
 @dataclass
@@ -51,7 +51,7 @@ class OllamaClient:
         self.model = model
         self.temperature = temperature
     
-    def generate(self, prompt: str, system: Optional[str] = None) -> str:
+    async def generate(self, prompt: str, system: Optional[str] = None) -> str:
         """Generate a response from the LLM."""
         url = f"{self.base_url}/api/generate"
         
@@ -68,10 +68,11 @@ class OllamaClient:
             payload["system"] = system
         
         try:
-            response = requests.post(url, json=payload, timeout=120)
-            response.raise_for_status()
-            return response.json().get("response", "")
-        except requests.exceptions.ConnectionError:
+            async with httpx.AsyncClient(timeout=120.0) as client:
+                response = await client.post(url, json=payload)
+                response.raise_for_status()
+                return response.json().get("response", "")
+        except httpx.ConnectError:
             raise ConnectionError(
                 f"Could not connect to Ollama at {self.base_url}. "
                 "Make sure Ollama is running."
@@ -79,7 +80,7 @@ class OllamaClient:
         except Exception as e:
             raise Exception(f"Ollama API error: {str(e)}")
     
-    def chat(self, messages: List[Dict[str, str]]) -> str:
+    async def chat(self, messages: List[Dict[str, str]]) -> str:
         """Chat with the LLM."""
         url = f"{self.base_url}/api/chat"
         
@@ -93,10 +94,11 @@ class OllamaClient:
         }
         
         try:
-            response = requests.post(url, json=payload, timeout=120)
-            response.raise_for_status()
-            return response.json().get("message", {}).get("content", "")
-        except requests.exceptions.ConnectionError:
+            async with httpx.AsyncClient(timeout=120.0) as client:
+                response = await client.post(url, json=payload)
+                response.raise_for_status()
+                return response.json().get("message", {}).get("content", "")
+        except httpx.ConnectError:
             raise ConnectionError(
                 f"Could not connect to Ollama at {self.base_url}. "
                 "Make sure Ollama is running."
@@ -104,15 +106,16 @@ class OllamaClient:
         except Exception as e:
             raise Exception(f"Ollama API error: {str(e)}")
     
-    def list_models(self) -> List[str]:
+    async def list_models(self) -> List[str]:
         """List available models."""
         url = f"{self.base_url}/api/tags"
         
         try:
-            response = requests.get(url, timeout=10)
-            response.raise_for_status()
-            models = response.json().get("models", [])
-            return [m["name"] for m in models]
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                response = await client.get(url)
+                response.raise_for_status()
+                models = response.json().get("models", [])
+                return [m["name"] for m in models]
         except Exception:
             return []
 
@@ -184,7 +187,7 @@ Important:
         self.client = OllamaClient(base_url=base_url, model=model)
         self.model = model
     
-    def plan(self, task: str, context: Optional[Dict[str, Any]] = None) -> TaskPlan:
+    async def plan(self, task: str, context: Optional[Dict[str, Any]] = None) -> TaskPlan:
         """
         Create an execution plan for a task.
         
@@ -213,7 +216,7 @@ Important:
         
         # Generate plan
         try:
-            response = self.client.generate(prompt, system=self.SYSTEM_PROMPT)
+            response = await self.client.generate(prompt, system=self.SYSTEM_PROMPT)
             return self._parse_plan(task, response)
         except ConnectionError:
             # Fallback to simple plan if Ollama not available
@@ -311,7 +314,7 @@ Important:
             reasoning="Fallback plan (LLM unavailable)"
         )
     
-    def chat(self, message: str, history: Optional[List[Dict[str, str]]] = None) -> str:
+    async def chat(self, message: str, history: Optional[List[Dict[str, str]]] = None) -> str:
         """
         Have a conversation with the LLM.
         
@@ -326,7 +329,7 @@ Important:
         messages.append({"role": "user", "content": message})
         
         try:
-            return self.client.chat(messages)
+            return await self.client.chat(messages)
         except Exception as e:
             return f"Error: {str(e)}"
     
@@ -335,10 +338,10 @@ Important:
         self.model = model
         self.client.model = model
     
-    def is_available(self) -> bool:
+    async def is_available(self) -> bool:
         """Check if the LLM is available."""
         try:
-            models = self.client.list_models()
+            models = await self.client.list_models()
             return len(models) > 0
         except Exception:
             return False

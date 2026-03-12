@@ -40,8 +40,6 @@ class TaskResponse(BaseModel):
     agent_type: Optional[str]
     created_at: str
     result: Optional[Any] = None
-    model: Optional[str] = None
-      tokens_used: Optional[int] = None
 
 
 class AgentInfo(BaseModel):
@@ -417,9 +415,7 @@ class APIServer:
                 description=task.description,
                 status=task.status.value,
                 agent_type=task.agent_type,
-                created_at=task.created_at.isoformat() if isinstance(task.created_at, datetime) else task.created_at,
-               model=task.model,
-                tokens_used=task.tokens_used
+                created_at=task.created_at.isoformat() if isinstance(task.created_at, datetime) else task.created_at
             )
         
         @self.app.get("/tasks", response_model=List[TaskResponse])
@@ -436,16 +432,14 @@ class APIServer:
             
             tasks = await orchestrator.list_tasks(status=task_status)
             
-           return [
+            return [
                 TaskResponse(
-                   id=t.id,
-                   description=t.description,
-                   status=t.status.value,
+                    id=t.id,
+                    description=t.description,
+                    status=t.status.value,
                     agent_type=t.agent_type,
                     created_at=t.created_at.isoformat() if isinstance(t.created_at, datetime) else t.created_at,
-                   result=t.result,
-                   model=t.model,
-                    tokens_used=t.tokens_used
+                    result=t.result
                 )
                 for t in tasks
             ]
@@ -461,17 +455,15 @@ class APIServer:
             if not task:
                 raise HTTPException(status_code=404, detail="Task not found")
             
-          return TaskResponse(
-               id=task.id,
-              description=task.description,
-              status=task.status.value,
+            return TaskResponse(
+                id=task.id,
+                description=task.description,
+                status=task.status.value,
                 agent_type=task.agent_type,
-                created_at=task.created_at.isoformat() if isinstance(task.created_at, datetime) else task.created_at,
-              result=task.result,
-              model=task.model,
-                tokens_used=task.tokens_used
+                created_at=t.created_at.isoformat() if isinstance(t.created_at, datetime) else t.created_at,
+                result=t.result
             )
-
+        
         @self.app.post("/tasks/{task_id}/cancel")
         async def cancel_task(task_id: str):
             """Cancel a task."""
@@ -633,24 +625,33 @@ class APIServer:
     
     async def broadcast_event(self, event_type: str, data: Dict[str, Any]):
         """Broadcast an event to all connected WebSocket clients."""
+        if not self._websockets:
+            return
+
         message = {
             "type": event_type,
             "data": data,
             "timestamp": datetime.now().isoformat()
         }
         
-        # Send to all connected clients
-        disconnected = []
+        # Send to all connected clients in parallel
+        tasks = []
         for ws in self._websockets:
-            try:
-                await ws.send_json(message)
-            except:
-                disconnected.append(ws)
+            tasks.append(ws.send_json(message))
         
-        # Remove disconnected clients
-        for ws in disconnected:
-            if ws in self._websockets:
-                self._websockets.remove(ws)
+        if tasks:
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+            
+            # Identify disconnected clients
+            disconnected = []
+            for i, result in enumerate(results):
+                if isinstance(result, Exception):
+                    disconnected.append(self._websockets[i])
+            
+            # Remove disconnected clients
+            for ws in disconnected:
+                if ws in self._websockets:
+                    self._websockets.remove(ws)
     
     async def start(self, host: str = "0.0.0.0", port: int = 8000):
         """

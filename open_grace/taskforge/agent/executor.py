@@ -1,8 +1,5 @@
-"""
-Executor for TaskForge.
-Executes planned steps using available tools with security checks.
-"""
-
+import asyncio
+import time
 from typing import Dict, List, Any, Optional
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -61,7 +58,7 @@ class Executor:
         """Get schemas for all registered tools."""
         return [tool.get_schema() for tool in self.tools.values()]
     
-    def execute_step(self, step: PlanStep, context: Optional[Dict[str, Any]] = None) -> ExecutionResult:
+    async def execute_step(self, step: PlanStep, context: Optional[Dict[str, Any]] = None) -> ExecutionResult:
         """
         Execute a single plan step.
         
@@ -72,7 +69,6 @@ class Executor:
         Returns:
             ExecutionResult with outcome
         """
-        import time
         start_time = time.time()
         
         # Check if tool exists
@@ -112,11 +108,12 @@ class Executor:
             if step.action:
                 if step.tool in ['file', 'git', 'sql']:
                     args['action'] = step.action
-                # Shell tool uses 'command' instead of 'action'
-                # The command should already be in args from the planner
             
-            # Run the tool
-            output: ToolOutput = tool.run(**args)
+            # Run the tool - use to_thread to avoid blocking event loop
+            if asyncio.iscoroutinefunction(tool.run):
+                output: ToolOutput = await tool.run(**args)
+            else:
+                output: ToolOutput = await asyncio.to_thread(tool.run, **args)
             
             execution_time = int((time.time() - start_time) * 1000)
             
@@ -148,8 +145,8 @@ class Executor:
             self.execution_history.append(result)
             return result
     
-    def execute_plan(self, plan: TaskPlan, 
-                     stop_on_error: bool = True) -> List[ExecutionResult]:
+    async def execute_plan(self, plan: TaskPlan, 
+                             stop_on_error: bool = True) -> List[ExecutionResult]:
         """
         Execute a complete plan.
         
@@ -186,7 +183,7 @@ class Executor:
                     continue
             
             # Execute step
-            result = self.execute_step(step, context)
+            result = await self.execute_step(step, context)
             results.append(result)
             
             # Store result in context for future steps
@@ -213,7 +210,7 @@ class Executor:
         return category_map.get(tool_name, ActionCategory.SYSTEM)
     
     def _resolve_placeholders(self, args: Dict[str, Any], 
-                              context: Dict[str, Any]) -> Dict[str, Any]:
+                               context: Dict[str, Any]) -> Dict[str, Any]:
         """Resolve placeholder values in arguments."""
         resolved = {}
         
