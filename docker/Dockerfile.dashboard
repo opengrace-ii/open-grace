@@ -1,0 +1,30 @@
+# Dashboard Dockerfile
+FROM node:18-slim AS builder
+
+WORKDIR /app
+
+# Copy package files
+COPY dashboard/package.json dashboard/package-lock.json* ./
+
+# Install dependencies
+RUN npm install
+
+# Copy the dashboard source
+COPY dashboard/ ./
+
+# Build the dashboard
+RUN npm run build
+
+# Production image
+FROM node:18-slim
+
+WORKDIR /app
+
+# Copy built app
+COPY --from=builder /app ./
+
+# Expose the dashboard port
+EXPOSE 3000
+
+# Start the dashboard
+CMD ["npm", "start"]
