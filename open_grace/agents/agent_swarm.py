@@ -14,6 +14,8 @@ from pathlib import Path
 
 from open_grace.agents.base_agent import BaseAgent, AgentTask, AgentMessage
 from open_grace.agents.planner_agent import PlannerAgent, ExecutionPlan
+from open_grace.agents.evaluator_agent import EvaluatorAgent
+from open_grace.memory.long_term_memory import get_ltm
 
 
 @dataclass
@@ -54,15 +56,18 @@ class AgentSwarm:
         """Initialize the agent swarm."""
         self.agents: Dict[str, BaseAgent] = {}
         self.planner = PlannerAgent()
+        self.evaluator = EvaluatorAgent()
         self._tasks: Dict[str, SwarmTask] = {}
         self._running = False
+        self.ltm = get_ltm()
     
     async def initialize(self):
         """Initialize the swarm and start all agents."""
         self._running = True
         
-        # Start planner
+        # Start planner and evaluator
         await self.planner.start()
+        await self.evaluator.start()
         
         # Start all agents
         for agent in self.agents.values():
@@ -156,12 +161,27 @@ class AgentSwarm:
             # Step 3: Aggregate results
             final_result = await self._aggregate_results(plan, step_results)
             
+            # Step 4: Evaluate the result (System Improvement Loop)
+            eval_task = AgentTask(
+                id=f"eval_{task_id}",
+                description=task_description,
+                context={
+                    "result": final_result,
+                    "plan": plan.reasoning if plan else ""
+                }
+            )
+            evaluation_report = await self.evaluator.process_task(eval_task)
+            
             swarm_task.status = "completed"
             swarm_task.completed_at = datetime.now().isoformat()
+            
+            # Learn from this task (System 1 + evaluation)
+            await self.ltm.distill_and_store(task_id, task_description, evaluation=evaluation_report)
             
             return {
                 "task_id": task_id,
                 "success": True,
+                "evaluation": evaluation_report.dict(),
                 "plan": {
                     "steps": len(plan.steps),
                     "estimated_time": plan.estimated_total_time,
@@ -182,15 +202,25 @@ class AgentSwarm:
             }
     
     async def _execute_plan(self, plan: ExecutionPlan, context: Optional[Dict[str, Any]] = None) -> Dict[int, Any]:
-        """Execute all steps in a plan."""
+        """
+        Execute steps in a plan dynamically (Skill Graph).
+        Instead of a fixed sequence, we allow agents to influence the next step.
+        """
         results = {}
         completed_steps = set()
         context = context or {}
         
-        # Sort steps by dependencies
+        # Skill Graph implementation:
+        # We start with the first step, but then dynamically re-evaluate.
+        current_step_index = 0
         sorted_steps = self._topological_sort(plan.steps)
         
-        for step in sorted_steps:
+        while current_step_index < len(sorted_steps):
+            step = sorted_steps[current_step_index]
+            
+            # Find appropriate agent/skill
+            agent = self._find_agent_for_step(step)
+            # ... process as before ...
             # Check dependencies
             if not all(dep in completed_steps for dep in step.dependencies):
                 # Wait for dependencies

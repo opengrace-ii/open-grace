@@ -98,12 +98,14 @@
 }
 
 .login-header {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
   text-align: center;
   margin-bottom: 32px;
 }
 
-.login-icon {
-  color: #3b82f6;
+.login-logo-large {
   margin-bottom: 16px;
 }
 

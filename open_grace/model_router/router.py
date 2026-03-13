@@ -10,6 +10,7 @@ The router decides which model to use based on:
 
 import os
 import json
+import asyncio
 from typing import Dict, List, Optional, Any, Callable, Type, TypeVar
 from dataclasses import dataclass, asdict
 from datetime import datetime
@@ -125,6 +126,9 @@ class ModelRouter:
         
         # Routing history
         self._history: List[RoutingDecision] = []
+
+        # Concurrency control
+        self.model_semaphore = asyncio.Semaphore(1)
     
     def _init_clients(self):
         """Initialize all model clients."""
@@ -245,6 +249,11 @@ class ModelRouter:
         # Strategy-based selection
         if strategy == RoutingStrategy.LOCAL_ONLY:
             if ModelProvider.OLLAMA in available:
+                # Intelligent local selection
+                if any(word in task.lower() for word in ["code", "python", "javascript", "implement"]):
+                    return ModelProvider.OLLAMA, "codellama" # Specific coding model
+                if any(word in task.lower() for word in ["research", "explain", "analyze"]):
+                    return ModelProvider.OLLAMA, "qwen" # Good for reasoning
                 return ModelProvider.OLLAMA, self.config["preferred_local"]
             raise Exception("Local models not available")
         
@@ -367,38 +376,39 @@ class ModelRouter:
         system_with_schema = self._inject_schema(system, response_model)
         current_prompt = prompt
         
-        for attempt in range(max_retries):
-            try:
-                response = await client.generate(current_prompt, system_with_schema)
-                self._record_decision(prompt, provider, actual_model, strategy, response, client)
-                
-                if response_model:
-                    try:
-                        parsed = self._parse_content(response.content, response_model)
-                        response.content = parsed
-                        return response
-                    except ValidationError as e:
-                        if attempt == max_retries - 1:
-                            raise e
-                        current_prompt += f"\n\nValidation Failed. Error:\n{e}\nPlease correct the JSON output."
-                        continue
-                return response
-            except Exception as e:
-                # Simple fallback
-                if self.config.get("fallback_enabled", True) and not isinstance(e, ValidationError):
-                    for fallback_provider in [ModelProvider.OLLAMA, ModelProvider.DEEPSEEK]:
-                        if fallback_provider in self._clients and fallback_provider != provider:
-                            try:
-                                fallback_client = self._clients[fallback_provider]
-                                if await fallback_client.is_available():
-                                    response = await fallback_client.generate(current_prompt, system_with_schema)
-                                    if response_model:
-                                        parsed = self._parse_content(response.content, response_model)
-                                        response.content = parsed
-                                    return response
-                            except Exception:
-                                continue
-                raise e
+        async with self.model_semaphore:
+            for attempt in range(max_retries):
+                try:
+                    response = await client.generate(current_prompt, system_with_schema)
+                    self._record_decision(prompt, provider, actual_model, strategy, response, client)
+                    
+                    if response_model:
+                        try:
+                            parsed = self._parse_content(response.content, response_model)
+                            response.content = parsed
+                            return response
+                        except ValidationError as e:
+                            if attempt == max_retries - 1:
+                                raise e
+                            current_prompt += f"\n\nValidation Failed. Error:\n{e}\nPlease correct the JSON output."
+                            continue
+                    return response
+                except Exception as e:
+                    # Simple fallback
+                    if self.config.get("fallback_enabled", True) and not isinstance(e, ValidationError):
+                        for fallback_provider in [ModelProvider.OLLAMA, ModelProvider.DEEPSEEK]:
+                            if fallback_provider in self._clients and fallback_provider != provider:
+                                try:
+                                    fallback_client = self._clients[fallback_provider]
+                                    if await fallback_client.is_available():
+                                        response = await fallback_client.generate(current_prompt, system_with_schema)
+                                        if response_model:
+                                            parsed = self._parse_content(response.content, response_model)
+                                            response.content = parsed
+                                        return response
+                                except Exception:
+                                    continue
+                    raise e
     
     async def chat(
         self, 
@@ -426,38 +436,39 @@ class ModelRouter:
             else:
                 current_messages.insert(0, {"role": "system", "content": instruction})
 
-        for attempt in range(max_retries):
-            try:
-                response = await client.chat(current_messages)
-                self._record_decision(last_message, provider, actual_model, strategy, response, client)
-                
-                if response_model:
-                    try:
-                        parsed = self._parse_content(response.content, response_model)
-                        response.content = parsed
-                        return response
-                    except ValidationError as e:
-                        if attempt == max_retries - 1:
-                            raise e
-                        current_messages.append({"role": "assistant", "content": response.content})
-                        current_messages.append({"role": "user", "content": f"Validation Failed. Error:\n{e}\nPlease correct the JSON output."})
-                        continue
-                return response
-            except Exception as e:
-                if self.config.get("fallback_enabled", True) and not isinstance(e, ValidationError):
-                    for fallback_provider in [ModelProvider.OLLAMA, ModelProvider.DEEPSEEK]:
-                        if fallback_provider in self._clients and fallback_provider != provider:
-                            try:
-                                fallback_client = self._clients[fallback_provider]
-                                if await fallback_client.is_available():
-                                    response = await fallback_client.chat(current_messages)
-                                    if response_model:
-                                        parsed = self._parse_content(response.content, response_model)
-                                        response.content = parsed
-                                    return response
-                            except Exception:
-                                continue
-                raise e
+        async with self.model_semaphore:
+            for attempt in range(max_retries):
+                try:
+                    response = await client.chat(current_messages)
+                    self._record_decision(last_message, provider, actual_model, strategy, response, client)
+                    
+                    if response_model:
+                        try:
+                            parsed = self._parse_content(response.content, response_model)
+                            response.content = parsed
+                            return response
+                        except ValidationError as e:
+                            if attempt == max_retries - 1:
+                                raise e
+                            current_messages.append({"role": "assistant", "content": response.content})
+                            current_messages.append({"role": "user", "content": f"Validation Failed. Error:\n{e}\nPlease correct the JSON output."})
+                            continue
+                    return response
+                except Exception as e:
+                    if self.config.get("fallback_enabled", True) and not isinstance(e, ValidationError):
+                        for fallback_provider in [ModelProvider.OLLAMA, ModelProvider.DEEPSEEK]:
+                            if fallback_provider in self._clients and fallback_provider != provider:
+                                try:
+                                    fallback_client = self._clients[fallback_provider]
+                                    if await fallback_client.is_available():
+                                        response = await fallback_client.chat(current_messages)
+                                        if response_model:
+                                            parsed = self._parse_content(response.content, response_model)
+                                            response.content = parsed
+                                        return response
+                                except Exception:
+                                    continue
+                    raise e
     
     async def get_available_providers(self) -> List[ModelProvider]:
         """Get list of available providers."""

@@ -10,6 +10,7 @@ interface CreateTaskModalProps {
 
 const AGENT_TYPES = [
   { value: 'auto', label: 'Auto (Best Match)' },
+  { value: 'swarm', label: 'Auto (Swarm Pipeline)' },
   { value: 'planner', label: 'Planner Agent' },
   { value: 'coder', label: 'Coder Agent' },
   { value: 'sysadmin', label: 'SysAdmin Agent' },

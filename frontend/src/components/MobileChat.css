@@ -102,15 +102,10 @@
 }
 
 .welcome-icon {
-  width: 64px;
-  height: 64px;
-  background: linear-gradient(135deg, #00a884, #25d366);
-  border-radius: 20px;
   display: flex;
   align-items: center;
   justify-content: center;
-  color: white;
-  margin-bottom: 16px;
+  margin-bottom: 24px;
 }
 
 .welcome-screen h2 {

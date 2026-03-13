@@ -154,3 +154,5 @@ cython_debug/
 instance_id.txt
 *.log
 vault.json
+logs/
+workspace/

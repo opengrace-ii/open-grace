@@ -136,6 +136,19 @@ class SysAdminAgent(BaseAgent):
         import time
         context = context or {}
         
+        # Check system resources before execution
+        from open_grace.diagnostics.system_guard import system_guard
+        safe, message = system_guard.check_and_log()
+        if not safe:
+            return CommandResult(
+                command=command,
+                stdout="",
+                stderr=f"System resource safety check failed: {message}",
+                returncode=-1,
+                success=False,
+                execution_time_ms=0
+            )
+
         # Check for dangerous commands
         if not self.allow_dangerous:
             for pattern in self.DANGEROUS_PATTERNS:
@@ -176,21 +189,20 @@ class SysAdminAgent(BaseAgent):
             )
 
         # Try to use sandbox if requested or for dangerous commands
-        use_sandbox = context.get("use_sandbox", False)
+        use_sandbox = context.get("use_sandbox", True) # Default to True for safety in TaskForge
         if use_sandbox:
-            from open_grace.sandbox.docker_sandbox import DockerSandbox, SandboxConfig
-            sandbox = DockerSandbox()
-            if sandbox.get_status()["docker_available"]:
-                self.logger.info(f"Executing command in sandbox: {command}")
-                sb_result = await sandbox.execute_shell(command, config=SandboxConfig(working_dir=str(effective_cwd)))
-                return CommandResult(
-                    command=command,
-                    stdout=sb_result.stdout,
-                    stderr=sb_result.stderr,
-                    returncode=sb_result.exit_code,
-                    success=sb_result.success,
-                    execution_time_ms=sb_result.duration_ms
-                )
+            from open_grace.sandbox.bwrap_runner import get_sandbox
+            sandbox = get_sandbox()
+            self.logger.info(f"Executing command in Bwrap sandbox: {command}")
+            sb_result = sandbox.run_command(command, working_dir=str(effective_cwd))
+            return CommandResult(
+                command=command,
+                stdout=sb_result.get("stdout", ""),
+                stderr=sb_result.get("stderr", sb_result.get("error", "")),
+                returncode=sb_result["exit_code"],
+                success=sb_result["success"],
+                execution_time_ms=(time.time() - start_time) * 1000
+            )
 
         try:
             result = subprocess.run(

@@ -5,22 +5,16 @@ import {
   Check, 
   Cpu, 
   Shield, 
-  Zap, 
-  Database,
-  GitBranch,
-  Box,
   ChevronRight,
   Github,
-  MessageSquare,
-  Lock,
-  Server,
   Sparkles,
   Cloud,
   Puzzle,
   Code,
-  Terminal as TerminalIcon,
-  Globe
+  Server,
+  MessageSquare
 } from 'lucide-react'
+import { Logo } from './Logo'
 import './LandingPage.css'
 
 export function LandingPage() {
@@ -115,7 +109,7 @@ export function LandingPage() {
       {/* Navigation */}
       <nav className="landing-nav">
         <div className="nav-brand">
-          <span className="brand-icon">◈</span>
+          <Logo width={48} />
           <span className="brand-title">Open Grace</span>
         </div>
         <div className="nav-links">
@@ -283,7 +277,7 @@ class CodeReviewer(GraceAgent):
       <footer className="landing-footer">
         <div className="footer-content">
           <div className="footer-brand">
-            <span className="brand-icon">◈</span>
+            <Logo width={32} />
             <span>Open Grace</span>
           </div>
           <p className="footer-tagline">

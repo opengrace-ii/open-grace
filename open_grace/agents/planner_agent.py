@@ -125,7 +125,7 @@ For each step, provide:
             
         except Exception as e:
             self.logger.warning(f"Failed to generate structured plan: {e}. Falling back to default plan.")
-            return self._create_fallback_plan(task_description, error=str(e))
+            return await self._create_fallback_plan(task_description, error=str(e))
     
     async def _create_fallback_plan(self, task_description: str, error: Optional[str] = None) -> ExecutionPlan:
         """Create a simple fallback plan when LLM fails."""

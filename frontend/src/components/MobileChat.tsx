@@ -15,6 +15,7 @@ import {
 } from 'lucide-react'
 import { APIClient } from '../api/client'
 import { TaskList } from './TaskList'
+import { Logo } from './Logo'
 import './MobileChat.css'
 
 interface Message {
@@ -258,9 +259,7 @@ export function MobileChat() {
     <div className="mobile-chat">
       <header className="mobile-header">
         <div className="header-title">
-          <div className="bot-avatar">
-            <Bot size={24} />
-          </div>
+          <Logo width={40} />
           <div className="header-info">
             <span>Open Grace</span>
             <span className="status">{activeView === 'chat' ? 'online' : 'tasks view'}</span>
@@ -278,7 +277,7 @@ export function MobileChat() {
             {messages.length === 0 ? (
               <div className="welcome-screen">
                 <div className="welcome-icon">
-                  <Bot size={48} />
+                  <Logo width={120} />
                 </div>
                 <h2>How can I help you?</h2>
                 <p>Talk to me or choose a quick action below to start an AI task.</p>

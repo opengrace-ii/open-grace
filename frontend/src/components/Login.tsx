@@ -1,6 +1,7 @@
 import { useState } from 'react'
-import { Sparkles, ArrowRight } from 'lucide-react'
+import { ArrowRight } from 'lucide-react'
 import { APIClient } from '../api/client'
+import { Logo } from './Logo'
 import './Login.css'
 
 interface LoginProps {
@@ -39,7 +40,7 @@ export function Login({ onLogin }: LoginProps) {
       {/* Left side - Content */}
       <div className="login-content">
         <div className="login-brand">
-          <span className="brand-icon">◈</span>
+          <Logo width={48} />
           <span className="brand-title">Open Grace</span>
         </div>
         
@@ -78,7 +79,7 @@ export function Login({ onLogin }: LoginProps) {
       <div className="login-form-container">
         <div className="login-box">
           <div className="login-header">
-            <Sparkles size={24} className="login-icon" />
+            <Logo width={120} className="login-logo-large" />
             <h2>Welcome to Open Grace</h2>
             <p>Enter your username to access your AI team</p>
           </div>

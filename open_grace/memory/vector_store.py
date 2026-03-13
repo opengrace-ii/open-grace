@@ -347,6 +347,9 @@ class VectorStore:
     
     def _search_faiss(self, query: str, top_k: int) -> List[SearchResult]:
         """Search using FAISS."""
+        if not self._documents or top_k <= 0:
+            return []
+            
         import faiss
         
         # Generate query embedding

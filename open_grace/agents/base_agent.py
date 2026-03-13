@@ -20,6 +20,7 @@ from pathlib import Path
 
 from open_grace.model_router.router import ModelRouter, get_router
 from open_grace.memory.vector_store import VectorStore, get_vector_store
+from open_grace.memory.long_term_memory import get_ltm
 from open_grace.security.vault import get_vault
 from open_grace.observability.logger import get_logger
 
@@ -110,6 +111,7 @@ class BaseAgent(ABC):
         # Core components
         self.model_router = model_router or get_router()
         self.vector_store = vector_store or get_vector_store()
+        self.ltm = get_ltm()
         self.vault = get_vault()
         self.logger = get_logger()
         
@@ -300,7 +302,8 @@ class BaseAgent(ABC):
 
     async def think(self, prompt: str, system: Optional[str] = None, 
                   model: Optional[str] = None,
-                  response_model: Optional[Type[BaseModel]] = None) -> Any:
+                  response_model: Optional[Type[BaseModel]] = None,
+                  use_ltm: bool = True) -> Any:
         """
         Use the LLM to think about something.
         
@@ -309,9 +312,16 @@ class BaseAgent(ABC):
             system: Optional system message
             model: Optional explicit model override
             response_model: Optional Pydantic model for structured output
+            use_ltm: Whether to inject relevant long-term knowledge
         """
         self.state = AgentState.THINKING
         
+        # Inject long-term memory if requested
+        if use_ltm:
+            ltm_context = self.ltm.recall_context(prompt)
+            if ltm_context:
+                prompt = f"{ltm_context}\n\n{prompt}"
+
         # Determine model to use
         selected_model = model
         if not selected_model and self._current_task:

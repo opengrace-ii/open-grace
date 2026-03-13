@@ -20,6 +20,7 @@ import { CreateTaskModal } from './CreateTaskModal'
 import { SessionsManager } from './SessionsManager'
 import { ActivityLog } from './ActivityLog'
 import { DiagnosticsPanel } from './DiagnosticsPanel'
+import { Logo } from './Logo'
 import './Dashboard.css'
 
 interface DashboardProps {
@@ -98,6 +99,7 @@ export function Dashboard({ onLogout }: DashboardProps) {
     <div className="dashboard">
       <header className="dashboard-header">
         <div className="header-left">
+          <Logo width={48} />
           <h1>Open Grace</h1>
           <span className="version">v0.4.0</span>
         </div>
