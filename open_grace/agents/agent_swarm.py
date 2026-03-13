@@ -5,9 +5,12 @@ Manages agent collaboration, task distribution, and result aggregation.
 """
 
 import asyncio
+import re
+import uuid
 from typing import Dict, List, Any, Optional, Type
 from dataclasses import dataclass
 from datetime import datetime
+from pathlib import Path
 
 from open_grace.agents.base_agent import BaseAgent, AgentTask, AgentMessage
 from open_grace.agents.planner_agent import PlannerAgent, ExecutionPlan
@@ -116,8 +119,21 @@ class AgentSwarm:
         Returns:
             Execution results
         """
+        context = context or {}
+        
+        # Create project workspace if not provided
+        if "working_dir" not in context:
+            # Create a safe project name from the task description
+            project_name = re.sub(r'[^a-zA-Z0-9]', '_', task_description[:30]).strip('_').lower()
+            if not project_name:
+                project_name = f"project_{uuid.uuid4().hex[:8]}"
+            
+            project_dir = Path("/home/opengrace/open_grace/workspace/projects") / project_name
+            project_dir.mkdir(parents=True, exist_ok=True)
+            context["working_dir"] = str(project_dir)
+
         # Create swarm task
-        task_id = f"swarm_{id(task_description) % 10000}"
+        task_id = f"swarm_{uuid.uuid4().hex[:8]}"
         swarm_task = SwarmTask(
             id=task_id,
             description=task_description,
@@ -134,8 +150,8 @@ class AgentSwarm:
             swarm_task.plan = plan
             
             # Step 2: Execute steps
-            step_results = await self._execute_plan(plan)
-            swarm_task.results = step_results
+            step_results = await self._execute_plan(plan, context)
+            swarm_task.results = {str(k): v for k, v in step_results.items()}
             
             # Step 3: Aggregate results
             final_result = await self._aggregate_results(plan, step_results)
@@ -165,10 +181,11 @@ class AgentSwarm:
                 "error": str(e)
             }
     
-    async def _execute_plan(self, plan: ExecutionPlan) -> Dict[int, Any]:
+    async def _execute_plan(self, plan: ExecutionPlan, context: Optional[Dict[str, Any]] = None) -> Dict[int, Any]:
         """Execute all steps in a plan."""
         results = {}
         completed_steps = set()
+        context = context or {}
         
         # Sort steps by dependencies
         sorted_steps = self._topological_sort(plan.steps)
@@ -191,10 +208,13 @@ class AgentSwarm:
                 continue
             
             # Execute step
+            step_context = context.copy()
+            step_context.update(step.parameters)
+            
             task = AgentTask(
                 id=f"step_{step.step_number}",
                 description=step.description,
-                context=step.parameters,
+                context=step_context,
                 priority=5
             )
             

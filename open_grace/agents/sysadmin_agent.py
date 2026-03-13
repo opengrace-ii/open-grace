@@ -115,21 +115,26 @@ class SysAdminAgent(BaseAgent):
         
         else:
             # Default: execute command
-            return await self.execute_command(task.description)
+            return await self.execute_command(task.description, context=task.context)
     
     async def execute_command(self, command: str, 
-                             timeout: int = 30) -> CommandResult:
+                             timeout: int = 30,
+                             cwd: Optional[str] = None,
+                             context: Optional[Dict[str, Any]] = None) -> CommandResult:
         """
         Execute a shell command safely.
         
         Args:
             command: The command to execute
             timeout: Timeout in seconds
+            cwd: Working directory (relative to workspace_root if not absolute)
+            context: Additional context
             
         Returns:
             CommandResult
         """
         import time
+        context = context or {}
         
         # Check for dangerous commands
         if not self.allow_dangerous:
@@ -146,13 +151,55 @@ class SysAdminAgent(BaseAgent):
         
         start_time = time.time()
         
+        # Determine effective working directory
+        effective_cwd = self.workspace_root
+        if cwd:
+            if os.path.isabs(cwd):
+                effective_cwd = Path(cwd)
+            else:
+                effective_cwd = self.workspace_root / cwd
+        
+        # Ensure it exists
+        effective_cwd.mkdir(parents=True, exist_ok=True)
+        
+        # Security: Enforce workspace boundary
+        try:
+            effective_cwd.relative_to(self.workspace_root)
+        except ValueError:
+            return CommandResult(
+                command=command,
+                stdout="",
+                stderr=f"Security violation: Execution attempted outside workspace boundary ({effective_cwd})",
+                returncode=-1,
+                success=False,
+                execution_time_ms=0
+            )
+
+        # Try to use sandbox if requested or for dangerous commands
+        use_sandbox = context.get("use_sandbox", False)
+        if use_sandbox:
+            from open_grace.sandbox.docker_sandbox import DockerSandbox, SandboxConfig
+            sandbox = DockerSandbox()
+            if sandbox.get_status()["docker_available"]:
+                self.logger.info(f"Executing command in sandbox: {command}")
+                sb_result = await sandbox.execute_shell(command, config=SandboxConfig(working_dir=str(effective_cwd)))
+                return CommandResult(
+                    command=command,
+                    stdout=sb_result.stdout,
+                    stderr=sb_result.stderr,
+                    returncode=sb_result.exit_code,
+                    success=sb_result.success,
+                    execution_time_ms=sb_result.duration_ms
+                )
+
         try:
             result = subprocess.run(
                 command,
                 shell=True,
                 capture_output=True,
                 text=True,
-                timeout=timeout
+                timeout=timeout,
+                cwd=str(effective_cwd)
             )
             
             execution_time = (time.time() - start_time) * 1000

@@ -21,6 +21,10 @@ from open_grace.model_router.router import ModelRouter, get_router, RoutingStrat
 from open_grace.security.vault import SecretVault, get_vault
 from open_grace.memory.sqlite_store import SQLiteMemoryStore
 from open_grace.observability.logger import GraceLogger
+from open_grace.agents.agent_swarm import AgentSwarm
+from open_grace.agents.coder_agent import CoderAgent
+from open_grace.agents.sysadmin_agent import SysAdminAgent
+from open_grace.agents.research_agent import ResearchAgent
 
 
 class TaskStatus(Enum):
@@ -106,6 +110,7 @@ class GraceOrchestrator:
         self.vault: Optional[SecretVault] = None
         self.memory: Optional[SQLiteMemoryStore] = None
         self.logger: Optional[GraceLogger] = None
+        self.swarm: Optional[AgentSwarm] = None
         
         # Agent registry
         self._agents: Dict[str, AgentInfo] = {}
@@ -149,6 +154,14 @@ class GraceOrchestrator:
         # Initialize memory
         self.memory = SQLiteMemoryStore()
         self.logger.info("Memory store initialized")
+        
+        # Initialize swarm
+        self.swarm = AgentSwarm()
+        self.swarm.add_agent(CoderAgent())
+        self.swarm.add_agent(SysAdminAgent())
+        self.swarm.add_agent(ResearchAgent())
+        await self.swarm.initialize()
+        self.logger.info("Agent swarm initialized with Coder, Sysmin, and Research agents")
         
         # Start task worker
         self._worker_task = asyncio.create_task(self._task_worker())
@@ -455,6 +468,18 @@ class GraceOrchestrator:
         
         try:
             # Select agent
+            if task.agent_type == "swarm":
+                # Execute via Swarm autonomous pipeline
+                self.logger.info(f"Executing swarm pipeline for task {task.id}")
+                swarm_result = await self.swarm.execute(task.description, context=task.metadata)
+                task.result = swarm_result
+                if swarm_result.get("success"):
+                    task.status = TaskStatus.COMPLETED
+                else:
+                    task.status = TaskStatus.FAILED
+                    task.error = swarm_result.get("error")
+                return
+
             agent_id = await self._select_agent(task.agent_type)
             
             if not agent_id:

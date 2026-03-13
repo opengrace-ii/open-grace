@@ -124,10 +124,10 @@ For each step, provide:
             return plan
             
         except Exception as e:
-            self._logger.warning(f"Failed to generate structured plan: {e}. Falling back to default plan.")
-            return self._create_fallback_plan(task_description)
+            self.logger.warning(f"Failed to generate structured plan: {e}. Falling back to default plan.")
+            return self._create_fallback_plan(task_description, error=str(e))
     
-    def _create_fallback_plan(self, task_description: str) -> ExecutionPlan:
+    async def _create_fallback_plan(self, task_description: str, error: Optional[str] = None) -> ExecutionPlan:
         """Create a simple fallback plan when LLM fails."""
         task_lower = task_description.lower()
         
@@ -139,7 +139,7 @@ For each step, provide:
                 step_number=1,
                 description="Analyze requirements and design solution",
                 agent_type="research",
-                estimated_time=300,
+                estimated_minutes=5,
                 dependencies=[],
                 parameters={}
             ))
@@ -147,7 +147,7 @@ For each step, provide:
                 step_number=2,
                 description="Write the code implementation",
                 agent_type="coder",
-                estimated_time=600,
+                estimated_minutes=10,
                 dependencies=[1],
                 parameters={}
             ))
@@ -155,7 +155,7 @@ For each step, provide:
                 step_number=3,
                 description="Test and verify the implementation",
                 agent_type="coder",
-                estimated_time=300,
+                estimated_minutes=5,
                 dependencies=[2],
                 parameters={}
             ))
@@ -165,7 +165,7 @@ For each step, provide:
                 step_number=1,
                 description="Analyze system requirements",
                 agent_type="research",
-                estimated_time=300,
+                estimated_minutes=5,
                 dependencies=[],
                 parameters={}
             ))
@@ -173,7 +173,7 @@ For each step, provide:
                 step_number=2,
                 description="Execute system configuration",
                 agent_type="sysadmin",
-                estimated_time=600,
+                estimated_minutes=10,
                 dependencies=[1],
                 parameters={}
             ))
@@ -183,7 +183,7 @@ For each step, provide:
                 step_number=1,
                 description="Research and analyze the task",
                 agent_type="research",
-                estimated_time=300,
+                estimated_minutes=5,
                 dependencies=[],
                 parameters={}
             ))
@@ -191,18 +191,22 @@ For each step, provide:
                 step_number=2,
                 description="Execute the main task",
                 agent_type="coder",
-                estimated_time=600,
+                estimated_minutes=10,
                 dependencies=[1],
                 parameters={}
             ))
         
-        total_time = sum(s.estimated_time for s in steps)
+        total_time = sum(s.estimated_minutes for s in steps)
         
+        if error:
+            self.logger.info(f"Fallback planning due to error: {error}")
+        self.logger.warning("Using fallback plan based on system keywords")
+
         return ExecutionPlan(
             task_id=f"plan_fallback",
             original_task=task_description,
             steps=steps,
-            estimated_total_time=total_time,
+            estimated_total_minutes=total_time,
             reasoning="Fallback plan based on task keywords"
         )
     

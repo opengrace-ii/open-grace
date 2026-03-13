@@ -128,10 +128,18 @@ Respond with only the code, no explanations."""
         # Extract code from response
         code = self._extract_code(response, language)
         
+        filename = context.get("filename")
+        working_dir = context.get("working_dir")
+        
+        if filename and working_dir:
+            file_path = Path(working_dir) / filename
+            await self._write_file(str(file_path), code)
+            self.logger.info(f"CoderAgent wrote code to {file_path}")
+        
         return CodeSnippet(
             language=language,
             code=code,
-            filename=context.get("filename"),
+            filename=filename,
             description=description
         )
     

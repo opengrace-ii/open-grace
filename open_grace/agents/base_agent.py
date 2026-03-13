@@ -16,6 +16,7 @@ from pydantic import BaseModel
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
+from pathlib import Path
 
 from open_grace.model_router.router import ModelRouter, get_router
 from open_grace.memory.vector_store import VectorStore, get_vector_store
@@ -55,6 +56,8 @@ class AgentTask:
     description: str
     context: Dict[str, Any]
     priority: int = 5
+    metadata: Dict[str, Any] = field(default_factory=dict)
+    working_dir: Optional[str] = None
     created_at: str = ""
     deadline: Optional[str] = None
     
@@ -122,6 +125,9 @@ class BaseAgent(ABC):
         
         # Tools
         self._tools: Dict[str, Callable] = {}
+        
+        # Workspace
+        self.workspace_root = Path("/home/opengrace/open_grace/workspace")
         
         # Background task
         self._running = False
