@@ -1,7 +1,7 @@
 import asyncio
 import logging
 from typing import Optional, Any
-from open_grace.model_router.router import get_router, RoutingStrategy
+from backend.model_router.router import get_router, RoutingStrategy
 
 logger = logging.getLogger(__name__)
 

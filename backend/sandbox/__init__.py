@@ -8,7 +8,7 @@ Provides isolated execution of:
 - Network requests
 """
 
-from open_grace.sandbox.docker_sandbox import DockerSandbox, SandboxConfig
-from open_grace.sandbox.executor import SandboxExecutor
+from backend.sandbox.docker_sandbox import DockerSandbox, SandboxConfig
+from backend.sandbox.executor import SandboxExecutor
 
 __all__ = ["DockerSandbox", "SandboxConfig", "SandboxExecutor"]

@@ -20,10 +20,10 @@ from rich.table import Table
 from rich.panel import Panel
 from rich import box
 
-from open_grace.kernel.orchestrator import GraceOrchestrator, get_orchestrator
-from open_grace.security.vault import get_vault
-from open_grace.model_router.router import get_router, RoutingStrategy
-from open_grace.cli import knowledge
+from backend.kernel.orchestrator import GraceOrchestrator, get_orchestrator
+from backend.security.vault import get_vault
+from backend.model_router.router import get_router, RoutingStrategy
+from backend.cli import knowledge
 
 
 app = typer.Typer(
@@ -272,7 +272,7 @@ def add_api_key(
     api_key: str = typer.Argument(..., help="API key"),
 ):
     """Add an API key for a provider."""
-    from open_grace.model_router.clients import ModelProvider
+    from backend.model_router.clients import ModelProvider
     
     router = get_router()
     try:

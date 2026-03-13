@@ -21,7 +21,7 @@ try:
 except ImportError:
     DOCKER_AVAILABLE = False
 
-from open_grace.observability.logger import get_logger
+from backend.observability.logger import get_logger
 
 
 @dataclass

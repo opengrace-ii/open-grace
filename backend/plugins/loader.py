@@ -14,8 +14,8 @@ import importlib.util
 from typing import Dict, List, Optional, Any, Type
 from pathlib import Path
 
-from open_grace.plugins.sdk import Plugin, PluginMetadata
-from open_grace.observability.logger import get_logger
+from backend.plugins.sdk import Plugin, PluginMetadata
+from backend.observability.logger import get_logger
 
 
 class PluginLoader:

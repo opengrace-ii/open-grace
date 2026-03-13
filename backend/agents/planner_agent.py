@@ -9,7 +9,7 @@ import json
 from typing import Dict, List, Any, Optional
 from pydantic import BaseModel, Field
 
-from open_grace.agents.base_agent import BaseAgent, AgentTask
+from backend.agents.base_agent import BaseAgent, AgentTask
 
 
 class PlanStep(BaseModel):

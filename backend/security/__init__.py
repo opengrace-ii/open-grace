@@ -7,9 +7,9 @@ Includes:
 - Authentication
 """
 
-from open_grace.security.permissions import PermissionManager, get_permission_manager, ActionCategory
-from open_grace.security.vault import SecretVault, get_vault
-from open_grace.security.auth import AuthManager, get_auth_manager
+from backend.security.permissions import PermissionManager, get_permission_manager, ActionCategory
+from backend.security.vault import SecretVault, get_vault
+from backend.security.auth import AuthManager, get_auth_manager
 
 __all__ = [
     "PermissionManager",

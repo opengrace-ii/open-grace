@@ -8,9 +8,11 @@ import {
   Layers, 
   Clock, 
   CheckCircle2,
-  AlertTriangle
+  AlertTriangle,
+  Terminal as TerminalIcon
 } from 'lucide-react';
 import { StatsCard } from '@/components/StatsCard';
+import { TerminalFeed } from '@/components/TerminalFeed';
 import { cn } from '@/services/utils';
 import { 
   AreaChart, 
@@ -125,7 +127,8 @@ export default function SystemDashboard() {
 
       {/* Main Panel */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2 bg-slate-900/50 border border-slate-800 p-6 rounded-2xl backdrop-blur-sm">
+        <div className="lg:col-span-2 space-y-6">
+          <div className="bg-slate-900/50 border border-slate-800 p-6 rounded-2xl backdrop-blur-sm">
           <div className="flex justify-between items-center mb-6">
             <h2 className="text-lg font-semibold text-white flex items-center gap-2">
               <Layers className="w-5 h-5 text-blue-500" />
@@ -195,6 +198,12 @@ export default function SystemDashboard() {
             </ResponsiveContainer>
           </div>
         </div>
+
+        {/* Real-time Terminal Feed */}
+        <div className="h-[300px]">
+          <TerminalFeed />
+        </div>
+      </div>
 
         {/* System Activity Feed */}
         <div className="bg-slate-900/50 border border-slate-800 p-6 rounded-2xl backdrop-blur-sm">

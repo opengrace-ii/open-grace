@@ -10,8 +10,15 @@ import {
   CheckCircle2,
   Lock,
   Search,
-  Plus
+  Plus,
+  ShieldCheck,
+  Zap,
+  Globe,
+  FileCode,
+  Terminal,
+  Cpu
 } from 'lucide-react';
+import { motion } from 'framer-motion';
 import { cn } from '@/services/utils';
 
 const plugins = [
@@ -21,7 +28,10 @@ const plugins = [
     description: 'Autonomous multi-file editing and code generation.',
     status: 'active',
     category: 'Core',
-    permissions: ['filesystem', 'read-write']
+    icon: FileCode,
+    color: 'blue',
+    permissions: ['filesystem', 'read-write'],
+    computeIndex: 'LOW'
   },
   { 
     name: 'python_executor', 
@@ -29,7 +39,10 @@ const plugins = [
     description: 'Execute Python scripts in a secure sandbox (bubblewrap).',
     status: 'active',
     category: 'Runtime',
-    permissions: ['sandbox', 'terminal']
+    icon: Terminal,
+    color: 'emerald',
+    permissions: ['sandbox', 'terminal'],
+    computeIndex: 'MEDIUM'
   },
   { 
     name: 'web_search', 
@@ -37,7 +50,10 @@ const plugins = [
     description: 'Tavily-powered real-time web search for information retrieval.',
     status: 'disabled',
     category: 'Network',
-    permissions: ['internet']
+    icon: Globe,
+    color: 'amber',
+    permissions: ['internet'],
+    computeIndex: 'HIGH'
   },
   { 
     name: 'git_tool', 
@@ -45,134 +61,138 @@ const plugins = [
     description: 'Full Git workflow integration for agents.',
     status: 'disabled',
     category: 'Core',
-    permissions: ['terminal', 'filesystem']
+    icon: Puzzle,
+    color: 'slate',
+    permissions: ['terminal', 'filesystem'],
+    computeIndex: 'LOW'
   }
 ];
 
 export default function PluginManager() {
   return (
     <div className="space-y-8 animate-in fade-in slide-in-from-top-4 duration-500">
-      <div className="flex justify-between items-center">
-        <div>
-          <h1 className="text-3xl font-bold text-white tracking-tight">Plugin Manager</h1>
-          <p className="text-slate-400 mt-2">Manage tools and capabilities for the agent swarm.</p>
+      <div className="flex justify-between items-center bg-slate-900 border border-slate-800 p-8 rounded-3xl backdrop-blur-md shadow-2xl relative overflow-hidden">
+        <div className="absolute top-0 right-0 p-12 opacity-5 pointer-events-none">
+           <Puzzle size={200} className="text-blue-500" />
         </div>
-        <div className="flex gap-3">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
-            <input 
-              type="text" 
-              placeholder="Search plugins..." 
-              className="pl-10 pr-4 py-2 bg-slate-900/50 border border-slate-800 rounded-lg text-sm text-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all w-64"
-            />
+        
+        <div className="relative z-10">
+          <div className="flex items-center gap-3 mb-2">
+             <div className="flex items-center gap-1.5 px-3 py-1 bg-blue-500/10 border border-blue-500/20 rounded-full">
+                <ShieldCheck className="w-3 h-3 text-blue-400" />
+                <span className="text-[10px] font-black text-blue-400 uppercase tracking-widest">Runtime Security Active</span>
+             </div>
+             <span className="text-[10px] font-mono text-slate-600 tracking-tighter uppercase">Sandbox Architecture: BWRAP-S1</span>
           </div>
-          <button className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-500 rounded-lg text-white font-medium transition-all shadow-lg shadow-blue-500/20">
+          <h1 className="text-3xl font-bold text-white tracking-tight">Plugin Ecosystem</h1>
+          <p className="text-slate-500 mt-2 italic text-sm">Extend the swarm's capabilities by hot-loading secure tools and runtimes.</p>
+        </div>
+        
+        <div className="flex gap-3 relative z-10">
+          <button className="flex items-center gap-2 px-6 py-3 bg-blue-600 hover:bg-blue-500 rounded-2xl text-white font-bold text-xs transition-all shadow-xl shadow-blue-900/40 uppercase tracking-widest">
             <Plus className="w-4 h-4" />
-            Install Plugin
+            Registry
           </button>
         </div>
       </div>
 
-      <div className="grid gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {plugins.map((plugin) => (
           <div 
             key={plugin.name} 
-            className="bg-slate-900/50 border border-slate-800 rounded-2xl p-6 group hover:border-slate-700 transition-all backdrop-blur-sm"
+            className="bg-slate-900/40 border border-slate-800 rounded-3xl p-6 group hover:border-slate-600 transition-all backdrop-blur-sm relative overflow-hidden h-full flex flex-col"
           >
-            <div className="flex justify-between items-start gap-6">
-              <div className="flex-1">
-                <div className="flex items-center gap-3 mb-2">
+            <div className="flex justify-between items-start mb-8">
+               <div className="flex items-center gap-4">
                   <div className={cn(
-                    "p-2 rounded-lg bg-slate-950 border border-slate-800 text-slate-400 group-hover:text-blue-400 group-hover:border-blue-500/30 transition-all shadow-xl",
-                    plugin.status === 'active' ? "border-blue-500/20 text-blue-400" : ""
+                    "p-3 rounded-2xl border transition-all shadow-2xl",
+                    plugin.status === 'active' 
+                      ? `bg-${plugin.color}-500/10 border-${plugin.color}-500/20 text-${plugin.color}-400`
+                      : "bg-slate-950 border-slate-800 text-slate-500"
                   )}>
-                    <Puzzle className="w-5 h-5" />
+                    <plugin.icon className="w-6 h-6" />
                   </div>
                   <div>
                     <div className="flex items-center gap-3">
-                      <h3 className="text-lg font-bold text-white uppercase tracking-tight">{plugin.name}</h3>
-                      <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-800 text-slate-500">v{plugin.version}</span>
+                      <h3 className="text-xl font-black text-white uppercase tracking-tighter">{plugin.name}</h3>
+                      <span className="text-[9px] font-black px-2 py-0.5 rounded-full bg-slate-950 border border-slate-800 text-slate-600">v{plugin.version}</span>
                     </div>
-                    <div className="flex items-center gap-2 mt-1">
-                      <span className="text-[10px] text-blue-400 font-bold uppercase tracking-widest">{plugin.category}</span>
-                      <span className="text-[10px] text-slate-600">•</span>
-                      <div className="flex gap-1.5">
-                        {plugin.permissions.map((p) => (
-                          <div key={p} className="flex items-center gap-1">
-                            <Lock className="w-2.5 h-2.5 text-slate-500" />
-                            <span className="text-[10px] text-slate-500 font-medium">{p}</span>
-                          </div>
-                        ))}
-                      </div>
+                    <div className="flex items-center gap-3 mt-1.5">
+                       <span className={cn(
+                         "text-[10px] font-black uppercase tracking-widest",
+                         plugin.status === 'active' ? "text-emerald-500" : "text-slate-600"
+                       )}>{plugin.status}</span>
+                       <span className="text-slate-800 font-bold">•</span>
+                       <span className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">{plugin.category}</span>
                     </div>
                   </div>
-                </div>
-                <p className="text-sm text-slate-400 max-w-2xl mt-4 leading-relaxed line-clamp-2">
-                  {plugin.description}
-                </p>
-              </div>
-
-              <div className="flex flex-col gap-3 min-w-[140px]">
-                <div className="flex items-center justify-between p-3 rounded-xl bg-slate-950/50 border border-slate-800/50 mb-1">
-                  <span className="text-[10px] font-bold text-slate-500 uppercase tracking-tighter">Status</span>
-                  <div className="flex items-center gap-2">
-                    <span className={cn(
-                      "w-1.5 h-1.5 rounded-full",
-                      plugin.status === 'active' ? "bg-green-500" : "bg-slate-600"
-                    )}></span>
-                    <span className={cn(
-                      "text-[10px] font-bold uppercase",
-                      plugin.status === 'active' ? "text-green-400" : "text-slate-500"
-                    )}>
-                      {plugin.status}
-                    </span>
-                  </div>
-                </div>
-                <div className="flex gap-2">
-                  <button className={cn(
-                    "flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all",
-                    plugin.status === 'active' 
-                      ? "bg-red-500/10 text-red-400 hover:bg-red-500/20" 
-                      : "bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20"
-                  )}>
-                    <Power className="w-3.5 h-3.5" />
-                    {plugin.status === 'active' ? 'Disable' : 'Enable'}
-                  </button>
-                  <button className="p-2 aspect-square rounded-lg bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-white transition-all">
+               </div>
+               <div className="flex gap-2">
+                 <button className="p-2.5 rounded-xl bg-slate-950 border border-slate-800 text-slate-500 hover:text-white hover:border-slate-600 transition-all">
                     <Settings2 className="w-4 h-4" />
-                  </button>
-                </div>
-              </div>
+                 </button>
+                 <button className={cn(
+                    "p-2.5 rounded-xl border transition-all",
+                    plugin.status === 'active' 
+                      ? "bg-red-500/10 border-red-500/20 text-red-500 hover:bg-red-500/20" 
+                      : "bg-emerald-500/10 border-emerald-500/20 text-emerald-500 hover:bg-emerald-500/20"
+                 )}>
+                    <Power className="w-4 h-4" />
+                 </button>
+               </div>
             </div>
 
-            <div className="mt-6 pt-6 border-t border-slate-800/50 flex justify-between items-center text-[10px] font-medium text-slate-500">
-               <div className="flex gap-4">
-                  <span className="flex items-center gap-1.5">
-                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
-                    Passed security audit
-                  </span>
-                  <span className="flex items-center gap-1.5">
-                    <RefreshCw className="w-3.5 h-3.5 text-blue-500" />
-                    Auto-updates enabled
-                  </span>
+            <p className="text-sm text-slate-400 leading-relaxed h-[48px] line-clamp-2 px-1 mb-8">
+              {plugin.description}
+            </p>
+
+            <div className="grid grid-cols-3 gap-4 mb-8">
+               <div className="bg-slate-950/40 p-3 rounded-2xl border border-slate-800/50">
+                  <span className="text-[9px] text-slate-600 uppercase font-black block mb-1 tracking-widest">Recall</span>
+                  <span className="text-xs font-bold text-slate-300">99.8%</span>
                </div>
-               <button className="flex items-center gap-1.5 text-slate-400 hover:text-white transition-colors">
-                  <Download className="w-3.5 h-3.5" />
-                  Update to v2.1.1
-               </button>
+               <div className="bg-slate-950/40 p-3 rounded-2xl border border-slate-800/50">
+                  <span className="text-[9px] text-slate-600 uppercase font-black block mb-1 tracking-widest">Compute</span>
+                  <span className={cn(
+                    "text-xs font-bold",
+                    plugin.computeIndex === 'LOW' ? "text-emerald-500" : 
+                    plugin.computeIndex === 'MEDIUM' ? "text-blue-500" : "text-amber-500"
+                  )}>{plugin.computeIndex}</span>
+               </div>
+               <div className="bg-slate-950/40 p-3 rounded-2xl border border-slate-800/50">
+                  <span className="text-[9px] text-slate-600 uppercase font-black block mb-1 tracking-widest">Sandbox</span>
+                  <ShieldCheck className="w-3.5 h-3.5 text-blue-500" />
+               </div>
+            </div>
+
+            <div className="mt-auto pt-6 border-t border-slate-800/50 flex flex-wrap gap-2">
+               {plugin.permissions.map((p) => (
+                  <div key={p} className="flex items-center gap-1.5 px-2 py-1 bg-slate-950 rounded-lg border border-slate-800">
+                    <Lock className="w-2.5 h-2.5 text-slate-600" />
+                    <span className="text-[9px] text-slate-500 font-bold uppercase tracking-tight">{p}</span>
+                  </div>
+               ))}
             </div>
           </div>
         ))}
-        
-        {/* Placeholder for warning */}
-        <div className="bg-amber-500/5 border border-amber-500/20 rounded-2xl p-4 flex items-center gap-4">
-           <div className="p-2 rounded-lg bg-amber-500/20 text-amber-500">
-             <AlertCircle className="w-5 h-5" />
-           </div>
-           <p className="text-xs text-amber-500/80 font-medium">
-             Wait! 2 plugins are currently disabled and may affect <strong>Research</strong> and <strong>Deployment</strong> capabilities.
-           </p>
-        </div>
+      </div>
+
+      <div className="bg-blue-600/5 border border-blue-500/20 rounded-3xl p-8 relative overflow-hidden group">
+         <div className="absolute top-0 right-0 p-8 opacity-10 pointer-events-none group-hover:rotate-12 transition-transform duration-700">
+            <Cpu size={120} className="text-blue-400" />
+         </div>
+         <div className="relative z-10 flex flex-col md:flex-row items-center justify-between gap-8">
+            <div className="max-w-xl">
+               <h3 className="text-xl font-bold text-white mb-2">Automated Optimization Required</h3>
+               <p className="text-sm text-slate-400 leading-relaxed">
+                  The current swarm is utilizing a legacy version of the <strong>Web Search</strong> node. 
+                  Upgrade to v1.0.0 is recommended to reduce token latency by approx. 40%.
+               </p>
+            </div>
+            <button className="flex items-center gap-2 px-8 py-3 bg-white text-slate-950 rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-slate-200 transition-all whitespace-nowrap">
+               Run Cluster Update
+            </button>
+         </div>
       </div>
     </div>
   );

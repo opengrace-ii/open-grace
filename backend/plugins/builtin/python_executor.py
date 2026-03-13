@@ -3,8 +3,8 @@ Python Executor Tool - Safe code execution for Open Grace agents.
 """
 
 from typing import Dict, List, Optional, Any
-from open_grace.plugins.sdk import Plugin, PluginMetadata, PluginType, tool
-from open_grace.sandbox.bwrap_runner import get_sandbox
+from backend.plugins.sdk import Plugin, PluginMetadata, PluginType, tool
+from backend.sandbox.bwrap_runner import get_sandbox
 
 class PythonExecutorPlugin(Plugin):
     """Plugin providing safe Python execution."""

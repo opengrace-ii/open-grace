@@ -16,7 +16,7 @@ from typing import Optional, Dict, Any, List
 from pathlib import Path
 from dataclasses import dataclass
 
-from open_grace.observability.logger import get_logger
+from backend.observability.logger import get_logger
 
 
 @dataclass

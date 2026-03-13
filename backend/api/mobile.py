@@ -6,7 +6,7 @@ from typing import Dict, List, Optional, Any
 from datetime import datetime
 from pydantic import BaseModel
 
-from open_grace.observability.logger import get_logger
+from backend.observability.logger import get_logger
 
 
 class PushSubscription(BaseModel):

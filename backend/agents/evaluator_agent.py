@@ -4,7 +4,7 @@ Evaluator Agent - Analyzes task results and provides quality feedback.
 
 from typing import Dict, List, Any, Optional
 from pydantic import BaseModel, Field
-from open_grace.agents.base_agent import BaseAgent, AgentTask
+from backend.agents.base_agent import BaseAgent, AgentTask
 
 class EvaluationReport(BaseModel):
     """Structured report for task evaluation."""

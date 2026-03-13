@@ -8,6 +8,6 @@ Provides HTTP endpoints for:
 - Real-time updates via WebSockets
 """
 
-from open_grace.api.server import APIServer
+from backend.api.server import APIServer
 
 __all__ = ["APIServer"]

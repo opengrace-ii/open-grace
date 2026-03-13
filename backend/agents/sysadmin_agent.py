@@ -16,7 +16,7 @@ from typing import Dict, List, Any, Optional
 from dataclasses import dataclass
 from pathlib import Path
 
-from open_grace.agents.base_agent import BaseAgent, AgentTask
+from backend.agents.base_agent import BaseAgent, AgentTask
 
 
 @dataclass
@@ -137,7 +137,7 @@ class SysAdminAgent(BaseAgent):
         context = context or {}
         
         # Check system resources before execution
-        from open_grace.diagnostics.system_guard import system_guard
+        from backend.diagnostics.system_guard import system_guard
         safe, message = system_guard.check_and_log()
         if not safe:
             return CommandResult(
@@ -191,7 +191,7 @@ class SysAdminAgent(BaseAgent):
         # Try to use sandbox if requested or for dangerous commands
         use_sandbox = context.get("use_sandbox", True) # Default to True for safety in TaskForge
         if use_sandbox:
-            from open_grace.sandbox.bwrap_runner import get_sandbox
+            from backend.sandbox.bwrap_runner import get_sandbox
             sandbox = get_sandbox()
             self.logger.info(f"Executing command in Bwrap sandbox: {command}")
             sb_result = sandbox.run_command(command, working_dir=str(effective_cwd))

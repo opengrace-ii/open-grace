@@ -7,9 +7,9 @@ Integrates sandbox with the rest of the system.
 from typing import Dict, Any, Optional, List
 from enum import Enum
 
-from open_grace.sandbox.docker_sandbox import DockerSandbox, SandboxConfig, ExecutionResult
-from open_grace.security.permissions import PermissionManager, get_permission_manager, ActionCategory
-from open_grace.observability.logger import get_logger
+from backend.sandbox.docker_sandbox import DockerSandbox, SandboxConfig, ExecutionResult
+from backend.security.permissions import PermissionManager, get_permission_manager, ActionCategory
+from backend.observability.logger import get_logger
 
 
 class ExecutionType(Enum):

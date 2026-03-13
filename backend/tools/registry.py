@@ -9,8 +9,8 @@ from typing import Dict, List, Any, Optional, Callable
 from dataclasses import dataclass
 from datetime import datetime
 
-from open_grace.security.permissions import PermissionManager, get_permission_manager, ActionCategory
-from open_grace.observability.logger import get_logger
+from backend.security.permissions import PermissionManager, get_permission_manager, ActionCategory
+from backend.observability.logger import get_logger
 
 
 @dataclass

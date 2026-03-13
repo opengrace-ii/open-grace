@@ -23,9 +23,9 @@ from rich.console import Console
 from rich.table import Table
 from rich.progress import Progress, SpinnerColumn, TextColumn
 
-from open_grace.memory.rag_engine import RAGEngine, get_rag_engine
-from open_grace.memory.vector_store import get_vector_store
-from open_grace.memory.document_processor import get_document_processor
+from backend.memory.rag_engine import RAGEngine, get_rag_engine
+from backend.memory.vector_store import get_vector_store
+from backend.memory.document_processor import get_document_processor
 
 
 app = typer.Typer(help="Knowledge management - Feed data to your LLM")

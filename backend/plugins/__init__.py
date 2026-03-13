@@ -8,9 +8,9 @@ Enables third-party extensions for:
 - Event handlers
 """
 
-from open_grace.plugins.sdk import Plugin, PluginMetadata, tool, agent
-from open_grace.plugins.manager import PluginManager, get_plugin_manager
-from open_grace.plugins.loader import PluginLoader
+from backend.plugins.sdk import Plugin, PluginMetadata, tool, agent
+from backend.plugins.manager import PluginManager, get_plugin_manager
+from backend.plugins.loader import PluginLoader
 
 __all__ = [
     "Plugin",

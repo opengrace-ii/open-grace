@@ -5,7 +5,7 @@ File Editor Tool - Safe file manipulation for Open Grace agents.
 import os
 from pathlib import Path
 from typing import Dict, List, Optional, Any
-from open_grace.plugins.sdk import Plugin, PluginMetadata, PluginType, tool
+from backend.plugins.sdk import Plugin, PluginMetadata, PluginType, tool
 
 class FileEditorPlugin(Plugin):
     """Plugin providing core file editing capabilities."""

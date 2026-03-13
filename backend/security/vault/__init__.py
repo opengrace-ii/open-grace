@@ -5,8 +5,8 @@ The Secret Vault ensures that sensitive information like API keys,
 passwords, and tokens are never exposed to LLMs or logged.
 """
 
-from open_grace.security.vault.vault import SecretVault, get_vault
-from open_grace.security.vault.providers import VaultProvider, FileVaultProvider
+from backend.security.vault.vault import SecretVault, get_vault
+from backend.security.vault.providers import VaultProvider, FileVaultProvider
 
 __all__ = [
     "SecretVault",

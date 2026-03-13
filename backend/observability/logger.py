@@ -132,11 +132,35 @@ class GraceLogger:
         )
         activity_handler.setFormatter(activity_formatter)
         self._activity_logger.addHandler(activity_handler)
+        
+        # Callbacks for real-time bridging (dashboard/websockets)
+        self._callbacks = []
     
+    def register_callback(self, callback):
+        """Register a callback for all log events."""
+        if callback not in self._callbacks:
+            self._callbacks.append(callback)
+            
+    def _trigger_callbacks(self, log_data: Dict[str, Any]):
+        """Trigger all registered callbacks with log data."""
+        for callback in self._callbacks:
+            try:
+                callback(log_data)
+            except Exception as e:
+                # Don't let callback errors crash the logger
+                print(f"Error in log callback: {e}", file=sys.stderr)
+
     def log_activity(self, message: str, level: str = "INFO"):
         """Log a high-level activity for the audit trail."""
         lvl = getattr(logging, level.upper(), logging.INFO)
+        log_data = {
+            "timestamp": datetime.now().isoformat(),
+            "level": level.upper(),
+            "type": "activity",
+            "message": message
+        }
         self._activity_logger.log(lvl, message)
+        self._trigger_callbacks(log_data)
     def debug(self, message: str, extra: Optional[Dict[str, Any]] = None):
         """Log debug message."""
         self._logger.debug(message, extra=extra or {})
@@ -167,6 +191,13 @@ class GraceLogger:
                 "context": details or {}
             }
         )
+        self._trigger_callbacks({
+            "type": "agent_action",
+            "agent_id": agent_id,
+            "action": action,
+            "details": details or {},
+            "timestamp": datetime.now().isoformat()
+        })
     
     def log_task_event(self, task_id: str, event: str,
                       details: Optional[Dict[str, Any]] = None):
@@ -178,6 +209,13 @@ class GraceLogger:
                 "context": details or {}
             }
         )
+        self._trigger_callbacks({
+            "type": "task_event",
+            "task_id": task_id,
+            "event": event,
+            "details": details or {},
+            "timestamp": datetime.now().isoformat()
+        })
     
     def log_tool_execution(self, tool_name: str, success: bool,
                           duration_ms: float, details: Optional[Dict[str, Any]] = None):

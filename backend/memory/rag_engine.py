@@ -11,9 +11,9 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
-from open_grace.memory.vector_store import VectorStore, get_vector_store, SearchResult
-from open_grace.memory.document_processor import DocumentProcessor, get_document_processor
-from open_grace.model_router.router import ModelRouter, get_router
+from backend.memory.vector_store import VectorStore, get_vector_store, SearchResult
+from backend.memory.document_processor import DocumentProcessor, get_document_processor
+from backend.model_router.router import ModelRouter, get_router
 
 
 @dataclass

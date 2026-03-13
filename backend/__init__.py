@@ -20,8 +20,8 @@ __version__ = "0.3.0"
 __author__ = "opengrace-ii"
 __license__ = "MIT"
 
-from open_grace.kernel.orchestrator import GraceOrchestrator
-from open_grace.config.settings import GraceSettings
+from backend.kernel.orchestrator import GraceOrchestrator
+from backend.config.settings import GraceSettings
 
 __all__ = [
     "GraceOrchestrator",

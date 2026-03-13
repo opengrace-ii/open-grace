@@ -9,11 +9,11 @@ from typing import Dict, List, Any, Optional
 from dataclasses import dataclass
 from datetime import datetime
 
-from open_grace.plugins.sdk import Plugin, PluginMetadata, PluginType
-from open_grace.plugins.loader import PluginLoader, PluginValidator
-from open_grace.kernel.orchestrator import GraceOrchestrator, get_orchestrator
-from open_grace.tools.registry import ToolRegistry, get_tool_registry
-from open_grace.observability.logger import get_logger
+from backend.plugins.sdk import Plugin, PluginMetadata, PluginType
+from backend.plugins.loader import PluginLoader, PluginValidator
+from backend.kernel.orchestrator import GraceOrchestrator, get_orchestrator
+from backend.tools.registry import ToolRegistry, get_tool_registry
+from backend.observability.logger import get_logger
 
 
 @dataclass

@@ -12,10 +12,10 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
-from open_grace.agents.base_agent import BaseAgent, AgentTask, AgentMessage
-from open_grace.agents.planner_agent import PlannerAgent, ExecutionPlan
-from open_grace.agents.evaluator_agent import EvaluatorAgent
-from open_grace.memory.long_term_memory import get_ltm
+from backend.agents.base_agent import BaseAgent, AgentTask, AgentMessage
+from backend.agents.planner_agent import PlannerAgent, ExecutionPlan
+from backend.agents.evaluator_agent import EvaluatorAgent
+from backend.memory.long_term_memory import get_ltm
 
 
 @dataclass

@@ -13,13 +13,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
 
-from open_grace.kernel.orchestrator import GraceOrchestrator, get_orchestrator, TaskStatus
-from open_grace.agents.base_agent import AgentState
-from open_grace.security.auth import AuthManager, get_auth_manager, User
-from open_grace.api.mobile import MobileAPIManager, get_mobile_manager, PushSubscription, MobileNotification
-from open_grace.observability.logger import get_logger
-from open_grace.diagnostics.diagnostics_router import diagnostics_router
-from open_grace.diagnostics.logs import get_backend_logger
+from backend.kernel.orchestrator import GraceOrchestrator, get_orchestrator, TaskStatus
+from backend.agents.base_agent import AgentState
+from backend.security.auth import AuthManager, get_auth_manager, User
+from backend.api.mobile import MobileAPIManager, get_mobile_manager, PushSubscription, MobileNotification
+from backend.observability.logger import get_logger
+from backend.diagnostics.diagnostics_router import diagnostics_router
+from backend.diagnostics.logs import get_backend_logger
 
 backend_logger = get_backend_logger()
 
@@ -150,8 +150,8 @@ class APIServer:
         async def backend_exception_handler(request: Request, exc: Exception):
             import traceback
             import uuid
-            from open_grace.diagnostics.logs import crash_store, CrashReport
-            from open_grace.diagnostics.health import get_system_health
+            from backend.diagnostics.logs import crash_store, CrashReport
+            from backend.diagnostics.health import get_system_health
             
             tb = traceback.format_exc()
             backend_logger.error(f"Unhandled exception at {request.url.path}: {exc}\n{tb}")
@@ -195,8 +195,31 @@ class APIServer:
         self.logger = get_logger()
         self._websockets: List[WebSocket] = []
         
+        # Register as a subscriber to the system logger for real-time dashboard updates
+        self.logger.register_callback(self._handle_system_log)
+        
         # Register routes
         self._register_routes()
+        
+    def _handle_system_log(self, log_data: Dict[str, Any]):
+        """Handle a log event from the system and broadcast to WebSockets."""
+        # Map internal log types to dashboard event types
+        event_type = "log"
+        if log_data.get("type") == "agent_action":
+            event_type = "agent_activity"
+        elif log_data.get("type") == "task_event":
+            event_type = "task_event"
+            
+        # Broadcast via the server's websocket manager
+        # Note: broadcast_event is async, but this callback is sync.
+        # We use asyncio.create_task to bridge them.
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                loop.create_task(self.broadcast_event(event_type, log_data))
+        except RuntimeError:
+            # No running event loop (e.g. during startup/shutdown)
+            pass
     
     async def _get_current_user(self, credentials: HTTPAuthorizationCredentials = Depends(security)) -> Optional[User]:
         """Get current user from token."""

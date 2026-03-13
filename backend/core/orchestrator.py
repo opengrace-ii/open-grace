@@ -3,13 +3,13 @@ import logging
 from typing import Any, Optional
 from pathlib import Path
 
-from open_grace.agents.planner_agent import PlannerAgent
-from open_grace.agents.coder_agent import CoderAgent
-from open_grace.agents.research_agent import ResearchAgent
-from open_grace.agents.sysadmin_agent import SysAdminAgent
-from open_grace.agents.base_agent import AgentTask
-from open_grace.core.resource_manager import ResourceManager
-from open_grace.core.workspace_manager import get_workspace_manager
+from backend.agents.planner_agent import PlannerAgent
+from backend.agents.coder_agent import CoderAgent
+from backend.agents.research_agent import ResearchAgent
+from backend.agents.sysadmin_agent import SysAdminAgent
+from backend.agents.base_agent import AgentTask
+from backend.core.resource_manager import ResourceManager
+from backend.core.workspace_manager import get_workspace_manager
 
 logger = logging.getLogger(__name__)
 

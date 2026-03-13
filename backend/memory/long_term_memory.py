@@ -5,9 +5,9 @@ to permanent knowledge.
 
 import asyncio
 from typing import Dict, List, Optional, Any
-from open_grace.memory.knowledge_store import get_knowledge_store
-from open_grace.memory.short_term_memory import ShortTermMemory
-from open_grace.model_router.router import get_router
+from backend.memory.knowledge_store import get_knowledge_store
+from backend.memory.short_term_memory import ShortTermMemory
+from backend.model_router.router import get_router
 
 class LongTermMemory:
     """
@@ -31,7 +31,7 @@ class LongTermMemory:
         Incorporates evaluation feedback if available.
         """
         if evaluation:
-            from open_grace.agents.evaluator_agent import EvaluationReport
+            from backend.agents.evaluator_agent import EvaluationReport
             # Ensure it's the right type for later usage
             evaluation: EvaluationReport = evaluation
             

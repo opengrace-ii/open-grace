@@ -18,11 +18,11 @@ from datetime import datetime
 from enum import Enum
 from pathlib import Path
 
-from open_grace.model_router.router import ModelRouter, get_router
-from open_grace.memory.vector_store import VectorStore, get_vector_store
-from open_grace.memory.long_term_memory import get_ltm
-from open_grace.security.vault import get_vault
-from open_grace.observability.logger import get_logger
+from backend.model_router.router import ModelRouter, get_router
+from backend.memory.vector_store import VectorStore, get_vector_store
+from backend.memory.long_term_memory import get_ltm
+from backend.security.vault import get_vault
+from backend.observability.logger import get_logger
 
 
 class AgentState(Enum):
@@ -242,7 +242,7 @@ class BaseAgent(ABC):
         if tool_name not in self._tools:
             raise ValueError(f"Tool not found: {tool_name}")
             
-        from open_grace.diagnostics.guard import credit_guard
+        from backend.diagnostics.guard import credit_guard
         session_id = self._current_task.id if self._current_task else self.agent_id
         if not credit_guard.record_tool_call(session_id):
             raise Exception(f"Credit Guard limit reached: Max tool calls exceeded for session {session_id}")
@@ -339,7 +339,7 @@ class BaseAgent(ABC):
                 self.last_provider = response.provider.value
                 
                 # Apply credit guard
-                from open_grace.diagnostics.guard import credit_guard
+                from backend.diagnostics.guard import credit_guard
                 session_id = self._current_task.id if self._current_task else self.agent_id
                 total_tokens = response.usage.get("total_tokens", 0)
                 if not credit_guard.record_tokens(session_id, total_tokens):

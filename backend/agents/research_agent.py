@@ -15,8 +15,8 @@ from typing import Dict, List, Any, Optional
 from dataclasses import dataclass
 from pathlib import Path
 
-from open_grace.agents.base_agent import BaseAgent, AgentTask
-from open_grace.memory.rag_engine import RAGEngine, get_rag_engine
+from backend.agents.base_agent import BaseAgent, AgentTask
+from backend.memory.rag_engine import RAGEngine, get_rag_engine
 
 
 @dataclass

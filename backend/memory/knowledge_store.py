@@ -8,8 +8,8 @@ semantic retrieval of knowledge items.
 import json
 from typing import Dict, List, Optional, Any
 from datetime import datetime
-from open_grace.memory.sqlite_store import get_memory_store, SQLiteMemoryStore
-from open_grace.memory.vector_store import get_vector_store, VectorStore
+from backend.memory.sqlite_store import get_memory_store, SQLiteMemoryStore
+from backend.memory.vector_store import get_vector_store, VectorStore
 
 class KnowledgeItem:
     """A single piece of distilled knowledge."""
