@@ -8,10 +8,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- Session management with device tracking
-- Bulk session termination capability
-- Mobile-responsive PWA interface
-- Landing page with professional design
+- Advanced skill/plugin marketplace prototype
+- Visual flow editor for agent workflows
+
+## [1.1.0-alpha] - 2026-03-13
+
+### Added
+- **Evaluator Agent**: New specialized agent for plan validation and verification.
+- **Bwrap Sandbox**: Secure, lightweight containerization using `bubblewrap` for non-Docker environments.
+- **Modular Memory Architecture**: Separated `KnowledgeStore`, `ShortTermMemory`, and `LongTermMemory` for improved RAG and context management.
+- **System Diagnostics**: Added `EventLogger` and `SystemGuard` for real-time monitoring and stability.
+- **Task Queue & Scheduler**: Enhanced core orchestration for sequential task processing.
+
+### Changed
+- Refactored `SysAdminAgent` to support multiple sandbox backends (Docker/Bwrap).
+- Improved `ModelRouter` with task-specific model selection.
+
+### Fixed
+- Stabilized agent execution loop during complex multi-step tasks.
+- Improved error handling in the plugin system.
 
 ## [1.0.0] - 2026-03-10
 

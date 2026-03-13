@@ -59,6 +59,7 @@ Enhancement suggestions are tracked as GitHub issues. When creating one:
 - Python 3.10+
 - Node.js 18+ (for frontend)
 - Docker
+- Bubblewrap (for bwrap sandbox)
 - Ollama
 
 ### Backend Setup

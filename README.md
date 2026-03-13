@@ -2,7 +2,7 @@
 
 ### The AI Operating System
 
-Open-source Agent OS built in Python. 20K+ LOC. 4 AI Agents. Docker Sandbox. Local LLM First.
+Open-source Agent OS built in Python. 20K+ LOC. 5 AI Agents. Docker & Bwrap Sandbox. Local LLM First.
 One platform. Private. Autonomous. Agents that actually work for you.
 
 [Documentation](https://github.com/opengrace-ii/open-grace/wiki) •
@@ -57,13 +57,14 @@ TaskForge is the heart of Open Grace, functioning as the dedicated AI process ma
 | **Local LLM Integration** | Seamless connection to local models (llama3, mistral, deepseek) via Ollama, ensuring privacy and low latency. | Maximum data privacy and no token costs for AI reasoning. |
 | **Structured Planning** | Converts complex user prompts into step-by-step, actionable task graphs using model reasoning. | Ensures reliable and traceable automation workflows. |
 
-### The 4 Core Agents
+### The 5 Core Agents
 
 | Agent | What It Actually Does |
 |-------|----------------------|
 | **Planner** | Breaks down complex tasks into actionable steps, assigns subtasks to other agents, monitors progress. |
+| **Evaluator** | Critically reviews task plans and execution results to ensure logic, safety, and correctness. |
 | **Coder** | Writes, reviews, and refactors code. Supports Python, JavaScript, TypeScript, Go, Rust, and more. |
-| **SysAdmin** | Manages Docker containers, executes shell commands, monitors system health, handles deployments. |
+| **SysAdmin** | Manages Docker/Bwrap containers, executes shell commands, monitors system health, handles deployments. |
 | **Researcher** | Deep research across web and documents. Builds knowledge graphs, summarizes findings, cites sources. |
 
 ```bash
@@ -110,7 +111,7 @@ Security is the core principle. Every AI action is treated as potentially danger
 
 | Security Feature | Mechanism | Protection |
 |-----------------|-----------|------------|
-| **Docker Sandbox** | All shell and code execution runs inside isolated, disposable Docker containers. | Prevents `rm -rf /` or malicious code from harming the host machine. |
+| **Sandbox Isolation** | Execution runs inside isolated Docker containers or lightweight **bubblewrap** (bwrap) sandboxes. | Prevents `rm -rf /` or malicious code from harming the host machine. |
 | **Permission Gating** | Critical actions (deleting files, deploying services) require explicit human approval via the Web UI. | Prevents accidental or LLM-hallucinated destructive commands. |
 | **Secret Vault** | API keys, database passwords, and environment variables are stored in an isolated vault, shielded from the LLM. | Protects sensitive credentials from being leaked during AI reasoning. |
 | **Tool Allowlisting** | Only approved and verified tools/commands are allowed to be executed by the agents. | Enforces a strict boundary on the AI's delegated authority. |
@@ -125,8 +126,8 @@ Security is the core principle. Every AI action is treated as potentially danger
 |---------|------------|----------|---------|--------|
 | **Language** | Python | Rust | Python | Python |
 | **Local LLM First** | ✅ Native Ollama | ✅ Native | ❌ Cloud-first | ❌ Cloud-first |
-| **Docker Sandbox** | ✅ Built-in | ✅ Built-in | ❌ Manual | ❌ Manual |
-| **Multi-Agent** | ✅ 4 Core Agents | ✅ 7 Hands | ✅ | ✅ |
+| **Sandbox** | ✅ Docker & Bwrap | ✅ Docker | ❌ Manual | ❌ Manual |
+| **Multi-Agent** | ✅ 5 Core Agents | ✅ 7 Hands | ✅ | ✅ |
 | **Web UI** | ✅ React Dashboard | ✅ | ❌ CLI only | ❌ CLI only |
 | **Mobile Support** | ✅ PWA | ❌ | ❌ | ❌ |
 | **Plugin System** | ✅ SDK + Marketplace | ✅ FangHub | ❌ | ❌ |
@@ -211,14 +212,15 @@ grace run "Create a new FastAPI project and add a README"
 ```
 open-grace/
 ├── open_grace/
-│   ├── agents/           # Core AI agents (Planner, Coder, SysAdmin, Researcher)
+│   ├── agents/           # Core AI agents (Planner, Evaluator, Coder, SysAdmin, Researcher)
 │   ├── api/              # FastAPI REST API & WebSocket endpoints
 │   ├── cli/              # Command-line interface
+│   ├── diagnostics/      # System health and event monitoring (EventLogger, SystemGuard)
 │   ├── kernel/           # Task orchestration & scheduling
-│   ├── memory/           # RAG engine, vector store, document processing
+│   ├── memory/           # Modular memory (KnowledgeStore, ShortTerm, LongTerm)
 │   ├── model_router/     # LLM routing (Ollama, OpenAI, etc.)
 │   ├── plugins/          # Plugin system & SDK
-│   ├── sandbox/          # Docker sandbox for secure execution
+│   ├── sandbox/          # Docker & Bwrap sandboxes for secure execution
 │   ├── security/         # Auth, vault, permissions
 │   └── taskforge/        # TaskForge engine core
 ├── frontend/             # React + TypeScript dashboard
