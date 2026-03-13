@@ -39,7 +39,7 @@ class TaskRequest(BaseModel):
 class TaskResponse(BaseModel):
     """Response with task info."""
     id: str
-    id_numeric: int
+    id_numeric: int = 0
     description: str
     status: str
     agent_type: Optional[str]
@@ -219,6 +219,12 @@ class APIServer:
     
     def _register_routes(self):
         """Register API routes."""
+        
+        @self.app.on_event("startup")
+        async def startup_event():
+            """Initialize the orchestrator on startup."""
+            await get_orchestrator()
+            
         self.app.include_router(diagnostics_router)
         
         @self.app.get("/")

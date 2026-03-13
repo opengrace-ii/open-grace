@@ -157,9 +157,20 @@ class GraceOrchestrator:
         
         # Initialize swarm
         self.swarm = AgentSwarm()
-        self.swarm.add_agent(CoderAgent())
-        self.swarm.add_agent(SysAdminAgent())
-        self.swarm.add_agent(ResearchAgent())
+        
+        coder = CoderAgent()
+        sysadmin = SysAdminAgent()
+        researcher = ResearchAgent()
+        
+        self.swarm.add_agent(coder)
+        self.swarm.add_agent(sysadmin)
+        self.swarm.add_agent(researcher)
+        
+        # Register agents in the registry for API visibility
+        await self.register_agent("coder", coder.name, ["Code Generation", "Debugging", "Code Review", "Test Generation"], coder)
+        await self.register_agent("sysadmin", sysadmin.name, ["Command Execution", "System Monitoring", "Process Management", "Log Analysis"], sysadmin)
+        await self.register_agent("researcher", researcher.name, ["Information Retrieval", "Document Analysis", "Data Synthesis", "Fact Checking"], researcher)
+        
         await self.swarm.initialize()
         self.logger.info("Agent swarm initialized with Coder, Sysmin, and Research agents")
         

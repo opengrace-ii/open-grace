@@ -54,6 +54,7 @@ export function Sidebar() {
             src="/OG_Matelic.png" 
             alt="Open Grace Logo" 
             fill
+            unoptimized={true}
             className="object-contain brightness-110 drop-shadow-[0_0_8px_rgba(255,255,255,0.2)]"
           />
         </div>
