@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="OG_Matelic.png" alt="Open Grace Logo" width="200">
+</p>
+
 # Open Grace Roadmap
 
 This document outlines the vision and planned features for the Open Grace AI Operating System.

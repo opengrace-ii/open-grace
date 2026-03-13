@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="OG_Matelic.png" alt="Open Grace Logo" width="400">
+</p>
+
 # Open Grace
 
 ### The AI Operating System
