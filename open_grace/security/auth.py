@@ -376,6 +376,15 @@ class AuthManager:
         device_name = additional_claims.get('device_name', 'Unknown') if additional_claims else 'Unknown'
         ip_address = additional_claims.get('ip_address', 'Unknown') if additional_claims else 'Unknown'
         
+        # Cleanup existing sessions for same user on same device/IP
+        sessions_to_revoke = [
+            sid for sid, s in self._sessions.items()
+            if s.user_id == user_id and s.device_name == device_name and s.ip_address == ip_address
+        ]
+        for sid in sessions_to_revoke:
+            del self._sessions[sid]
+            self.logger.debug(f"Revoked existing session {sid} for user {user_id} on {device_name}")
+        
         # Create session
         session = Session(
             session_id=payload["jti"],

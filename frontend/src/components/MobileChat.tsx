@@ -176,6 +176,16 @@ export function MobileChat() {
                 : msg
             ))
             setIsLoading(false)
+          } else if (taskStatus.status === 'branching' || taskStatus.status === 'rolling_back') {
+            // Task failed and system is investigating/rolling back
+            setMessages(prev => prev.map(msg => 
+              msg.id === assistantId 
+                ? { ...msg, content: 'Task encountered an issue. System is automatically investigating...', status: 'sending' }
+                : msg
+            ))
+            // We continue polling as the investigation might produce a new result 
+            // OR the investigate_task_id could be followed. 
+            // For now, let's just keep the user informed.
           } else if (taskStatus.status === 'failed') {
             clearInterval(pollInterval)
             setMessages(prev => prev.map(msg => 

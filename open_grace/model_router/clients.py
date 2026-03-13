@@ -129,8 +129,9 @@ class OllamaClient(BaseModelClient):
         
         start_time = time.time()
         try:
-            response = await self._client.post(url, json=payload)
-            response.raise_for_status()
+            response = await self._client.post(url, json=payload, timeout=300.0)
+            if response.status_code != 200:
+                raise Exception(f"HTTP {response.status_code}: {response.text}")
             data = response.json()
             latency = (time.time() - start_time) * 1000
             
@@ -166,8 +167,9 @@ class OllamaClient(BaseModelClient):
         
         start_time = time.time()
         try:
-            response = await self._client.post(url, json=payload)
-            response.raise_for_status()
+            response = await self._client.post(url, json=payload, timeout=300.0)
+            if response.status_code != 200:
+                raise Exception(f"HTTP {response.status_code}: {response.text}")
             data = response.json()
             latency = (time.time() - start_time) * 1000
             

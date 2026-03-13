@@ -77,15 +77,15 @@ export function SystemHealthCard({ health }: { health: HealthProps | null }) {
         </div>
         <div className="health-item">
           <Cpu size={20} />
-          <span>CPU: <b className={`status-${getStatusColor(health.cpu, 'percent')}`}>{health.cpu || 'N/A'}</b></span>
+          <span>CPU Used: <b className={`status-${getStatusColor(health.cpu, 'percent')}`}>{health.cpu || 'N/A'}</b></span>
         </div>
         <div className="health-item">
           <HardDrive size={20} />
-          <span>Disk: <b className={`status-${getStatusColor(health.disk, 'percent')}`}>{health.disk || 'N/A'}</b></span>
+          <span>Disk Used: <b className={`status-${getStatusColor(health.disk, 'percent')}`}>{health.disk || 'N/A'}</b></span>
         </div>
         <div className="health-item">
           <Activity size={20} />
-          <span>Memory: <b className={`status-${getStatusColor(health.memory, 'percent')}`}>{health.memory || 'N/A'}</b></span>
+          <span>Memory Used: <b className={`status-${getStatusColor(health.memory, 'percent')}`}>{health.memory || 'N/A'}</b></span>
         </div>
         <div className="health-item">
           <Brain size={20} />

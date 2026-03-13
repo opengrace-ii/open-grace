@@ -32,6 +32,7 @@ from open_grace.model_router.clients import (
     ModelResponse,
 )
 from open_grace.security.vault import get_vault
+from open_grace.observability.logger import get_logger
 
 
 class RoutingStrategy(Enum):
@@ -116,6 +117,7 @@ class ModelRouter:
         """
         self.config_path = config_path or os.path.expanduser("~/.open_grace/router_config.json")
         self.vault = get_vault()
+        self.logger = get_logger()
         
         # Initialize clients
         self._clients: Dict[ModelProvider, BaseModelClient] = {}
@@ -394,6 +396,8 @@ class ModelRouter:
                             continue
                     return response
                 except Exception as e:
+                    import traceback
+                    self.logger.error(f"Error in ModelRouter.generate: {e}\n{traceback.format_exc()}")
                     # Simple fallback
                     if self.config.get("fallback_enabled", True) and not isinstance(e, ValidationError):
                         for fallback_provider in [ModelProvider.OLLAMA, ModelProvider.DEEPSEEK]:

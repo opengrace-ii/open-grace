@@ -30,8 +30,8 @@ function App() {
     // Register service worker for PWA
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('/sw.js')
-        .then(reg => console.log('Service Worker registered'))
-        .catch(err => console.log('Service Worker registration failed'))
+        .then(() => console.log('Service Worker registered'))
+        .catch(() => console.log('Service Worker registration failed'))
     }
     
     return () => window.removeEventListener('resize', checkMobile)
@@ -42,6 +42,11 @@ function App() {
     APIClient.setToken(newToken)
     setToken(newToken)
     setIsAuthenticated(true)
+    
+    // Redirect to root to clear /login from URL and show Dashboard
+    if (window.location.pathname === '/login' || window.location.search.includes('login')) {
+      window.history.pushState({}, '', '/')
+    }
   }
 
   const handleLogout = () => {
@@ -51,15 +56,17 @@ function App() {
     setIsAuthenticated(false)
   }
 
-  // Check if we're on the landing page route (show landing page at root unless explicitly going to login)
+  // Check if we're on the landing page route
   const isLandingPage = window.location.pathname === '/' && !window.location.search.includes('login')
+  // Check if explicitly on login page
+  const isLoginPage = window.location.pathname === '/login' || window.location.search.includes('login')
 
   return (
     <div className="app">
-      {isLandingPage ? (
-        <LandingPage />
-      ) : isAuthenticated ? (
+      {isAuthenticated && !isLoginPage ? (
         isMobile ? <MobileChat /> : <Dashboard onLogout={handleLogout} />
+      ) : isLandingPage ? (
+        <LandingPage />
       ) : (
         <Login onLogin={handleLogin} />
       )}

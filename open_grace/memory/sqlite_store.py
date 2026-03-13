@@ -202,21 +202,6 @@ class SQLiteMemoryStore:
                 for row in rows
             ]
 
-# Global memory store instance
-_memory_store: Optional[SQLiteMemoryStore] = None
-
-def get_memory_store() -> SQLiteMemoryStore:
-    """Get the global memory store instance."""
-    global _memory_store
-    if _memory_store is None:
-        _memory_store = SQLiteMemoryStore()
-    return _memory_store
-
-def set_memory_store(store: SQLiteMemoryStore):
-    """Set the global memory store instance."""
-    global _memory_store
-    _memory_store = store
-    
     def save_agent_state(self, agent_id: str, agent_type: str,
                         status: str, state_data: Dict[str, Any]) -> None:
         """Save agent state."""
@@ -376,3 +361,18 @@ def set_memory_store(store: SQLiteMemoryStore):
                 }
                 for row in rows
             ]
+
+# Global memory store instance
+_memory_store: Optional[SQLiteMemoryStore] = None
+
+def get_memory_store() -> SQLiteMemoryStore:
+    """Get the global memory store instance."""
+    global _memory_store
+    if _memory_store is None:
+        _memory_store = SQLiteMemoryStore()
+    return _memory_store
+
+def set_memory_store(store: SQLiteMemoryStore):
+    """Set the global memory store instance."""
+    global _memory_store
+    _memory_store = store

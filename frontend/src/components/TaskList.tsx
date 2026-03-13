@@ -45,7 +45,7 @@ export function TaskList({ refreshTrigger }: TaskListProps) {
     loadTasks()
     const interval = setInterval(loadTasks, 3000)
     return () => clearInterval(interval)
-  }, [refreshTrigger])
+  }, [refreshTrigger, filter])
 
   const loadTasks = async () => {
     try {
